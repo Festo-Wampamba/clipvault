@@ -9,7 +9,10 @@ use regex::RegexBuilder;
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension, Row, ToSql, TransactionBehavior, params};
 
+use crate::pipeline::app_key;
 use crate::{Error, Result};
+
+const PRIVATE_MODE_KEY: &str = "private_mode";
 
 pub const TEXT_MIME: &str = "text/plain;charset=utf-8";
 pub const PNG_MIME: &str = "image/png";
@@ -376,6 +379,70 @@ impl Store {
             params![key, value],
         )?;
         Ok(())
+    }
+
+    /// While on, the capture pipeline stores nothing.
+    pub fn private_mode(&self) -> Result<bool> {
+        Ok(self.setting(PRIVATE_MODE_KEY)?.as_deref() == Some("on"))
+    }
+
+    pub fn set_private_mode(&mut self, on: bool) -> Result<()> {
+        self.set_setting(PRIVATE_MODE_KEY, if on { "on" } else { "off" })
+    }
+
+    /// Apps the user excluded, as normalised names (see [`crate::app_key`]). The built-in
+    /// password-manager list is not included; it always applies.
+    pub fn excluded_apps(&self) -> Result<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT name FROM excluded_app ORDER BY name")?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn add_excluded_app(&mut self, name: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO excluded_app (name) VALUES (?1)",
+            [app_key(name)],
+        )?;
+        Ok(())
+    }
+
+    /// Returns whether the app was on the list.
+    pub fn remove_excluded_app(&mut self, name: &str) -> Result<bool> {
+        let removed = self
+            .conn
+            .execute("DELETE FROM excluded_app WHERE name = ?1", [app_key(name)])?;
+        Ok(removed > 0)
+    }
+
+    pub(crate) fn is_excluded_app(&self, name: &str) -> Result<bool> {
+        Ok(self.conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM excluded_app WHERE name = ?1)",
+            [app_key(name)],
+            |r| r.get(0),
+        )?)
+    }
+
+    pub fn set_thumbnail(&mut self, id: ClipId, png: &[u8]) -> Result<()> {
+        let changed = self.conn.execute(
+            "UPDATE clip SET thumbnail = ?1 WHERE id = ?2",
+            params![png, id],
+        )?;
+        if changed == 0 {
+            return Err(Error::NotFound(id));
+        }
+        Ok(())
+    }
+
+    /// The clip's PNG thumbnail, if it is an image that could be decoded.
+    pub fn thumbnail(&self, id: ClipId) -> Result<Option<Vec<u8>>> {
+        self.conn
+            .query_row("SELECT thumbnail FROM clip WHERE id = ?1", [id], |r| {
+                r.get(0)
+            })
+            .optional()?
+            .ok_or(Error::NotFound(id))
     }
 
     /// Deletes clips matching `condition` and the blob files only they used, then flushes
