@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" role="img" aria-labelledby="t d">
+  <title id="t">ClipVault</title>
+  <desc id="d">Banner: ClipVault, a clipboard manager you fully own, for Windows and Linux.</desc>
+  <defs>
+    <radialGradient id="glow" cx="80%" cy="10%" r="70%">
+      <stop offset="0" stop-color="#5e6ad2" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#5e6ad2" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <style>
+    text { font-family: Inter, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .mono { font-family: "JetBrains Mono", Consolas, "DejaVu Sans Mono", monospace; }
+  </style>
+
+  <rect width="1200" height="300" rx="20" fill="#010102"/>
+  <rect width="1200" height="300" rx="20" fill="url(#glow)"/>
+  <rect x="0.5" y="0.5" width="1199" height="299" rx="20" fill="none" stroke="#23252a"/>
+
+  <!-- logo: clipboard holding a stack of clips -->
+  <g transform="translate(70 78)">
+    <rect x="0" y="12" width="112" height="136" rx="18" fill="#0f1011" stroke="#5e6ad2" stroke-width="4"/>
+    <rect x="34" y="0" width="44" height="24" rx="8" fill="#5e6ad2"/>
+    <rect x="22" y="48" width="68" height="14" rx="5" fill="#5e6ad2"/>
+    <rect x="22" y="74" width="68" height="14" rx="5" fill="#34343a"/>
+    <rect x="22" y="100" width="48" height="14" rx="5" fill="#23252a"/>
+  </g>
+
+  <text x="220" y="140" font-size="68" font-weight="600" letter-spacing="-2.5" fill="#f7f8f8">ClipVault</text>
+  <text x="222" y="182" font-size="22" fill="#d0d6e0">Every copy, kept. Every paste, one keystroke away.</text>
+  <text x="222" y="222" font-size="15" fill="#8a8f98">Windows 10/11 · GNOME · KDE Plasma · Sway · Hyprland · X11</text>
+  <text x="222" y="246" font-size="15" fill="#62666d">Open source · GPL-3.0 · local-first, no telemetry</text>
+
+  <!-- stacked clip cards -->
+  <g transform="translate(830 52)">
+    <g transform="rotate(-4 160 40)">
+      <rect x="40" y="0" width="300" height="56" rx="12" fill="#141516" stroke="#34343a"/>
+      <text x="60" y="34" font-size="15" fill="#8a8f98">✓ € → ★ 🎉  symbols &amp; emoji</text>
+    </g>
+    <g transform="rotate(-2 160 100)">
+      <rect x="20" y="62" width="300" height="56" rx="12" fill="#18191a" stroke="#34343a"/>
+      <rect x="36" y="74" width="48" height="32" rx="6" fill="#5e6ad2" opacity="0.55"/>
+      <path d="M40 102 l12 -14 l10 10 l8 -6 l12 10 z" fill="#f7f8f8" opacity="0.7"/>
+      <text x="98" y="96" font-size="15" fill="#d0d6e0">screenshot.png · 1920×1080</text>
+    </g>
+    <g>
+      <rect x="0" y="126" width="300" height="56" rx="12" fill="#0f1011" stroke="#5e6ad2" stroke-width="2"/>
+      <text x="20" y="160" class="mono" font-size="14" fill="#f7f8f8">git commit -m "feat: capture"</text>
+    </g>
+  </g>
+</svg>

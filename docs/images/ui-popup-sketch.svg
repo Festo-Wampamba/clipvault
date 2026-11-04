@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" role="img" aria-labelledby="t d">
+  <title id="t">ClipVault popup sketch</title>
+  <desc id="d">Wireframe of the hotkey popup: search field, type filters, numbered clip list with text, image, link, file and symbol clips, a preview pane, and keyboard hints.</desc>
+  <style>
+    text { font-family: Inter, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .mono { font-family: "JetBrains Mono", Consolas, "DejaVu Sans Mono", monospace; }
+    .ink { fill: #f7f8f8; }
+    .muted { fill: #d0d6e0; }
+    .subtle { fill: #8a8f98; }
+    .tert { fill: #62666d; }
+    .hit { fill: #828fff; font-weight: 600; }
+    .idx { font-size: 12px; fill: #62666d; }
+    .main { font-size: 15px; }
+    .meta { font-size: 12px; fill: #8a8f98; }
+    .ic { fill: #18191a; stroke: #34343a; }
+    .ict { font-size: 12px; font-weight: 600; fill: #d0d6e0; }
+    .chip { fill: #141516; stroke: #34343a; }
+    .chipt { font-size: 13px; fill: #d0d6e0; }
+    .key { fill: #18191a; stroke: #34343a; }
+    .keyt { font-size: 12px; fill: #f7f8f8; }
+    .hint { font-size: 12px; fill: #8a8f98; }
+  </style>
+
+  <rect width="1200" height="720" rx="20" fill="#010102"/>
+  <text x="1160" y="28" text-anchor="end" font-size="12" class="tert">SKETCH — not final</text>
+
+  <rect x="40" y="40" width="1120" height="640" rx="16" fill="#0f1011" stroke="#34343a"/>
+
+  <!-- search -->
+  <rect x="64" y="64" width="1072" height="48" rx="10" fill="#141516" stroke="#5e6ad2" stroke-width="1.5"/>
+  <circle cx="92" cy="86" r="8" fill="none" stroke="#8a8f98" stroke-width="2"/>
+  <line x1="98" y1="92" x2="104" y2="98" stroke="#8a8f98" stroke-width="2"/>
+  <text x="118" y="94" font-size="17" class="ink">inv</text>
+  <rect x="146" y="76" width="2" height="22" fill="#828fff"/>
+  <text x="890" y="93" font-size="13" class="tert">/regex/ supported</text>
+  <rect x="1020" y="76" width="100" height="24" rx="12" fill="#18191a" stroke="#34343a"/>
+  <circle cx="1036" cy="88" r="4" fill="#27a644"/>
+  <text x="1046" y="92" font-size="12" class="subtle">Capturing</text>
+
+  <!-- filter chips -->
+  <rect x="64" y="128" width="52" height="28" rx="14" fill="#5e6ad2"/>
+  <text x="90" y="147" text-anchor="middle" font-size="13" fill="#ffffff">All</text>
+  <rect x="124" y="128" width="60" height="28" rx="14" class="chip"/><text x="154" y="147" text-anchor="middle" class="chipt">Text</text>
+  <rect x="192" y="128" width="74" height="28" rx="14" class="chip"/><text x="229" y="147" text-anchor="middle" class="chipt">Images</text>
+  <rect x="274" y="128" width="62" height="28" rx="14" class="chip"/><text x="305" y="147" text-anchor="middle" class="chipt">Links</text>
+  <rect x="344" y="128" width="58" height="28" rx="14" class="chip"/><text x="373" y="147" text-anchor="middle" class="chipt">Files</text>
+  <rect x="410" y="128" width="72" height="28" rx="14" class="chip"/><text x="446" y="147" text-anchor="middle" class="chipt">Pinned</text>
+  <text x="724" y="147" text-anchor="end" font-size="12" class="tert">7 of 486 clips</text>
+
+  <!-- 1 selected -->
+  <rect x="64" y="172" width="660" height="58" rx="10" fill="#18191a"/>
+  <rect x="64" y="184" width="3" height="34" rx="1.5" fill="#5e6ad2"/>
+  <text x="84" y="206" class="idx mono">1</text>
+  <rect x="104" y="185" width="32" height="32" rx="8" class="ic"/><text x="120" y="206" text-anchor="middle" class="ict">T</text>
+  <text x="152" y="198" class="main ink"><tspan class="hit">Inv</tspan>oice INV-2026-0142 — due 15 Nov</text>
+  <text x="152" y="218" class="meta">Thunderbird · just now</text>
+
+  <!-- 2 image -->
+  <text x="84" y="264" class="idx mono">2</text>
+  <rect x="104" y="243" width="56" height="36" rx="6" fill="#5e6ad2" opacity="0.45"/>
+  <path d="M108 275 l14 -16 l12 11 l9 -7 l13 12 z" fill="#f7f8f8" opacity="0.6"/>
+  <text x="176" y="256" class="main ink">Screenshot of <tspan class="hit">inv</tspan>oice dashboard</text>
+  <text x="176" y="276" class="meta">image/png · 1920×1080 · 412 KB · 3 min ago</text>
+
+  <!-- 3 link -->
+  <text x="84" y="322" class="idx mono">3</text>
+  <rect x="104" y="301" width="32" height="32" rx="8" class="ic"/><text x="120" y="322" text-anchor="middle" class="ict">↗</text>
+  <text x="152" y="314" class="main ink">https://billing.example.com/<tspan class="hit">inv</tspan>oices/0142</text>
+  <text x="152" y="334" class="meta">Firefox · 12 min ago</text>
+
+  <!-- 4 code -->
+  <text x="84" y="380" class="idx mono">4</text>
+  <rect x="104" y="359" width="32" height="32" rx="8" class="ic"/><text x="120" y="380" text-anchor="middle" class="ict">{ }</text>
+  <text x="152" y="372" class="main ink mono" font-size="14"><tspan class="hit">inv</tspan>oice_total = subtotal * 1.18</text>
+  <text x="152" y="392" class="meta">VS Code · 25 min ago</text>
+
+  <!-- 5 files -->
+  <text x="84" y="438" class="idx mono">5</text>
+  <rect x="104" y="417" width="32" height="32" rx="8" class="ic"/><text x="120" y="438" text-anchor="middle" class="ict">▤</text>
+  <text x="152" y="430" class="main ink">2 files: Q3-<tspan class="hit">inv</tspan>oices.pdf, Q4-draft.xlsx</text>
+  <text x="152" y="450" class="meta">Files · 1 h ago</text>
+
+  <!-- 6 symbols, pinned -->
+  <text x="84" y="496" class="idx mono">6</text>
+  <rect x="104" y="475" width="32" height="32" rx="8" class="ic"/><text x="120" y="496" text-anchor="middle" class="ict">Ω</text>
+  <text x="152" y="488" class="main ink">✓ € → ★ 🎉  <tspan class="subtle">(<tspan class="hit">inv</tspan>oice symbols)</tspan></text>
+  <text x="152" y="508" class="meta">Characters · 2 h ago</text>
+  <rect x="660" y="480" width="52" height="20" rx="10" fill="#18191a" stroke="#5e6ad2"/>
+  <text x="686" y="494" text-anchor="middle" font-size="11" fill="#828fff">PINNED</text>
+
+  <!-- 7 html -->
+  <text x="84" y="554" class="idx mono">7</text>
+  <rect x="104" y="533" width="32" height="32" rx="8" class="ic"/><text x="120" y="554" text-anchor="middle" class="ict">&lt;/&gt;</text>
+  <text x="152" y="546" class="main ink"><tspan class="hit">Inv</tspan>oice email template</text>
+  <text x="152" y="566" class="meta">text/html + text/plain · Docs · yesterday</text>
+
+  <!-- preview pane -->
+  <rect x="744" y="172" width="392" height="420" rx="12" fill="#141516" stroke="#23252a"/>
+  <text x="764" y="200" font-size="11" letter-spacing="1.5" font-weight="600" class="tert">PREVIEW</text>
+  <text x="764" y="232" font-size="15" class="ink">Invoice INV-2026-0142 — due 15 Nov</text>
+  <text x="764" y="256" font-size="14" class="muted">Amount: 1,250,000</text>
+  <text x="764" y="278" font-size="14" class="muted">Reference: CV-0142</text>
+  <line x1="764" y1="306" x2="1116" y2="306" stroke="#23252a"/>
+  <text x="764" y="334" font-size="12" class="subtle">Type</text><text x="864" y="334" font-size="12" class="muted">Text · 72 chars</text>
+  <text x="764" y="358" font-size="12" class="subtle">Formats</text><text x="864" y="358" font-size="12" class="muted">text/plain · text/html</text>
+  <text x="764" y="382" font-size="12" class="subtle">Source</text><text x="864" y="382" font-size="12" class="muted">Thunderbird</text>
+  <text x="764" y="406" font-size="12" class="subtle">Copied</text><text x="864" y="406" font-size="12" class="muted">Today, 14:02</text>
+  <text x="764" y="430" font-size="12" class="subtle">Used</text><text x="864" y="430" font-size="12" class="muted">3 times</text>
+  <rect x="764" y="540" width="120" height="32" rx="8" fill="#5e6ad2"/>
+  <text x="824" y="561" text-anchor="middle" font-size="13" fill="#ffffff">Paste</text>
+  <rect x="894" y="540" width="140" height="32" rx="8" fill="#18191a" stroke="#34343a"/>
+  <text x="964" y="561" text-anchor="middle" font-size="13" class="muted">Paste as plain</text>
+
+  <!-- footer hints -->
+  <line x1="40" y1="616" x2="1160" y2="616" stroke="#23252a"/>
+  <g transform="translate(64 634)">
+    <rect width="30" height="22" rx="5" class="key"/><text x="15" y="15" text-anchor="middle" class="keyt">↵</text>
+    <text x="38" y="15" class="hint">Paste</text>
+    <rect x="90" width="46" height="22" rx="5" class="key"/><text x="113" y="15" text-anchor="middle" class="keyt">⇧ ↵</text>
+    <text x="144" y="15" class="hint">Plain text</text>
+    <rect x="222" width="78" height="22" rx="5" class="key"/><text x="261" y="15" text-anchor="middle" class="keyt">Ctrl 1–9</text>
+    <text x="308" y="15" class="hint">Quick paste</text>
+    <rect x="394" width="52" height="22" rx="5" class="key"/><text x="420" y="15" text-anchor="middle" class="keyt">Ctrl P</text>
+    <text x="454" y="15" class="hint">Pin</text>
+    <rect x="490" width="52" height="22" rx="5" class="key"/><text x="516" y="15" text-anchor="middle" class="keyt">Ctrl E</text>
+    <text x="550" y="15" class="hint">Edit</text>
+    <rect x="590" width="36" height="22" rx="5" class="key"/><text x="608" y="15" text-anchor="middle" class="keyt">Del</text>
+    <text x="634" y="15" class="hint">Delete</text>
+    <rect x="690" width="36" height="22" rx="5" class="key"/><text x="708" y="15" text-anchor="middle" class="keyt">Tab</text>
+    <text x="734" y="15" class="hint">Filter</text>
+    <rect x="790" width="36" height="22" rx="5" class="key"/><text x="808" y="15" text-anchor="middle" class="keyt">Esc</text>
+    <text x="834" y="15" class="hint">Close</text>
+  </g>
+</svg>

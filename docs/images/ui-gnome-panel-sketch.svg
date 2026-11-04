@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 640" role="img" aria-labelledby="t d">
+  <title id="t">ClipVault GNOME top-bar sketch</title>
+  <desc id="d">Wireframe of the GNOME top-bar indicator menu: search, pinned clips, recent clips with quick-paste numbers, private mode switch, and actions.</desc>
+  <style>
+    text { font-family: Cantarell, Inter, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .ink { fill: #f7f8f8; }
+    .muted { fill: #d0d6e0; }
+    .subtle { fill: #8a8f98; }
+    .tert { fill: #62666d; }
+    .sec { font-size: 11px; letter-spacing: 1.5px; font-weight: 600; fill: #62666d; }
+    .item { font-size: 14px; fill: #f7f8f8; }
+    .num { font-size: 12px; fill: #62666d; }
+  </style>
+
+  <rect width="900" height="640" rx="20" fill="#26272b"/>
+  <text x="870" y="626" text-anchor="end" font-size="12" class="subtle">SKETCH — not final</text>
+
+  <!-- top bar -->
+  <path d="M20 0 H880 A20 20 0 0 1 900 20 V36 H0 V20 A20 20 0 0 1 20 0 z" fill="#000000"/>
+  <rect x="12" y="7" width="84" height="22" rx="11" fill="#1c1c1f"/>
+  <circle cx="34" cy="18" r="4" fill="#f7f8f8"/><circle cx="50" cy="18" r="3" fill="#8a8f98"/><circle cx="62" cy="18" r="3" fill="#8a8f98"/>
+  <text x="450" y="23" text-anchor="middle" font-size="14" font-weight="600" class="ink">Wed 4 Nov  14:02</text>
+
+  <!-- clipvault icon (active) -->
+  <rect x="776" y="5" width="34" height="26" rx="13" fill="#5e6ad2" opacity="0.35"/>
+  <rect x="786" y="10" width="14" height="17" rx="3" fill="none" stroke="#f7f8f8" stroke-width="1.8"/>
+  <rect x="790" y="8" width="6" height="4" rx="1.5" fill="#f7f8f8"/>
+  <path d="M826 24 q8 -12 16 0" stroke="#f7f8f8" stroke-width="1.8" fill="none"/>
+  <rect x="852" y="12" width="22" height="12" rx="3" fill="none" stroke="#f7f8f8" stroke-width="1.6"/>
+  <rect x="855" y="15" width="14" height="6" rx="1" fill="#f7f8f8"/>
+
+  <!-- menu -->
+  <path d="M793 40 l10 10 h-20 z" fill="#141516"/>
+  <rect x="430" y="48" width="450" height="560" rx="16" fill="#141516" stroke="#34343a"/>
+
+  <rect x="450" y="66" width="410" height="38" rx="19" fill="#0f1011" stroke="#34343a"/>
+  <circle cx="474" cy="85" r="6" fill="none" stroke="#8a8f98" stroke-width="1.8"/>
+  <line x1="478.5" y1="89.5" x2="483" y2="94" stroke="#8a8f98" stroke-width="1.8"/>
+  <text x="494" y="90" font-size="14" class="tert">Search clipboard…</text>
+
+  <text x="454" y="134" class="sec">PINNED</text>
+  <text x="454" y="162" class="item">★  Office address — Plot 12, Main Street</text>
+  <text x="454" y="192" class="item">★  ✓ € → ★ 🎉 symbol set</text>
+
+  <line x1="450" y1="210" x2="860" y2="210" stroke="#23252a"/>
+
+  <text x="454" y="238" class="sec">RECENT</text>
+  <rect x="442" y="248" width="426" height="38" rx="8" fill="#18191a"/>
+  <rect x="442" y="256" width="3" height="22" rx="1.5" fill="#5e6ad2"/>
+  <text x="454" y="272" class="item">Invoice INV-2026-0142 — due 15 Nov</text>
+  <text x="856" y="272" text-anchor="end" class="num">1</text>
+
+  <rect x="454" y="296" width="44" height="28" rx="5" fill="#5e6ad2" opacity="0.45"/>
+  <path d="M458 320 l10 -12 l8 7 l6 -4 l10 9 z" fill="#f7f8f8" opacity="0.6"/>
+  <text x="510" y="315" class="item">Screenshot · 1920×1080</text>
+  <text x="856" y="315" text-anchor="end" class="num">2</text>
+
+  <text x="454" y="354" class="item">https://github.com/Festo-Wampamba/clipvault</text>
+  <text x="856" y="354" text-anchor="end" class="num">3</text>
+
+  <text x="454" y="390" class="item" style="font-family: 'JetBrains Mono', Consolas, monospace; font-size: 13px">invoice_total = subtotal * 1.18</text>
+  <text x="856" y="390" text-anchor="end" class="num">4</text>
+
+  <text x="454" y="426" class="item">2 files: Q3-invoices.pdf, Q4-draft.xlsx</text>
+  <text x="856" y="426" text-anchor="end" class="num">5</text>
+
+  <line x1="450" y1="446" x2="860" y2="446" stroke="#23252a"/>
+
+  <text x="454" y="478" class="item">Private mode</text>
+  <rect x="816" y="464" width="44" height="22" rx="11" fill="#34343a"/>
+  <circle cx="827" cy="475" r="8" fill="#f7f8f8"/>
+
+  <line x1="450" y1="500" x2="860" y2="500" stroke="#23252a"/>
+
+  <text x="454" y="530" class="item">Open ClipVault…</text>
+  <text x="856" y="530" text-anchor="end" font-size="12" class="tert">Ctrl+`</text>
+  <text x="454" y="560" class="item">Clear history</text>
+  <text x="454" y="590" class="item">Settings</text>
+
+  <!-- annotations -->
+  <text x="40" y="150" font-size="13" class="muted">Indicator lives in the</text>
+  <text x="40" y="170" font-size="13" class="muted">GNOME top bar (shell</text>
+  <text x="40" y="190" font-size="13" class="muted">extension, GJS).</text>
+  <path d="M190 166 H410 V42 H772" stroke="#5e6ad2" stroke-width="1.2" stroke-dasharray="4 4" fill="none"/>
+  <text x="40" y="270" font-size="13" class="muted">Numbers 1–9 match the</text>
+  <text x="40" y="290" font-size="13" class="muted">quick-paste shortcuts in</text>
+  <text x="40" y="310" font-size="13" class="muted">the main popup.</text>
+  <path d="M220 280 H436" stroke="#5e6ad2" stroke-width="1.2" stroke-dasharray="4 4"/>
+  <text x="40" y="470" font-size="13" class="muted">Private mode pauses</text>
+  <text x="40" y="490" font-size="13" class="muted">capture — same switch as</text>
+  <text x="40" y="510" font-size="13" class="muted">Clipboard Indicator.</text>
+  <path d="M220 478 H436" stroke="#5e6ad2" stroke-width="1.2" stroke-dasharray="4 4"/>
+</svg>

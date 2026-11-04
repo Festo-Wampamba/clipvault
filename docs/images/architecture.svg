@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" role="img" aria-labelledby="t d">
+  <title id="t">ClipVault architecture</title>
+  <desc id="d">Layered architecture: OS clipboards feed platform capture backends, a shared capture pipeline, the core store with SQLite and blobs, and the Tauri desktop app that pastes clips back to the OS.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8a8f98"/>
+    </marker>
+    <marker id="arrowA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#828fff"/>
+    </marker>
+  </defs>
+  <style>
+    text { font-family: Inter, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .label { font-size: 11px; letter-spacing: 1.5px; fill: #62666d; font-weight: 600; }
+    .title { font-size: 16px; font-weight: 600; fill: #f7f8f8; }
+    .sub { font-size: 13px; fill: #8a8f98; }
+    .edge { font-size: 11px; fill: #8a8f98; }
+    .box { fill: #141516; stroke: #34343a; }
+    .accent { fill: #18191a; stroke: #5e6ad2; stroke-width: 1.5; }
+    .band { fill: #0f1011; stroke: #23252a; }
+    .line { stroke: #8a8f98; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+  </style>
+
+  <rect width="1200" height="760" rx="20" fill="#010102"/>
+
+  <!-- Row 1: operating systems -->
+  <text x="90" y="56" class="label">OPERATING SYSTEM CLIPBOARDS</text>
+  <rect x="90" y="70" width="240" height="80" rx="12" class="box"/>
+  <text x="110" y="104" class="title">Windows 10 / 11</text>
+  <text x="110" y="126" class="sub">Win32 clipboard</text>
+
+  <rect x="355" y="70" width="240" height="80" rx="12" class="box"/>
+  <text x="375" y="104" class="title">Wayland compositors</text>
+  <text x="375" y="126" class="sub">KDE · Sway · Hyprland · wlroots</text>
+
+  <rect x="620" y="70" width="240" height="80" rx="12" class="box"/>
+  <text x="640" y="104" class="title">X11</text>
+  <text x="640" y="126" class="sub">Xorg (legacy) · XWayland</text>
+
+  <rect x="885" y="70" width="240" height="80" rx="12" class="box"/>
+  <text x="905" y="104" class="title">GNOME Shell (Wayland)</text>
+  <text x="905" y="126" class="sub" style="fill:#828fff">+ ClipVault extension (GJS)</text>
+
+  <!-- OS -> backends -->
+  <line x1="210" y1="150" x2="210" y2="210" class="line"/>
+  <text x="218" y="185" class="edge">WM_CLIPBOARDUPDATE</text>
+  <line x1="475" y1="150" x2="475" y2="210" class="line"/>
+  <text x="483" y="185" class="edge">ext / wlr data-control</text>
+  <line x1="740" y1="150" x2="740" y2="210" class="line"/>
+  <text x="748" y="185" class="edge">XFixes events</text>
+  <line x1="1005" y1="150" x2="1005" y2="210" class="line"/>
+  <text x="1013" y="185" class="edge">D-Bus Bridge1</text>
+
+  <!-- Row 2: capture backends -->
+  <rect x="80" y="198" width="1055" height="92" rx="14" class="band"/>
+  <rect x="90" y="212" width="240" height="64" rx="10" class="accent"/>
+  <text x="110" y="250" class="title">win32 backend</text>
+  <rect x="355" y="212" width="240" height="64" rx="10" class="accent"/>
+  <text x="375" y="250" class="title">data-control backend</text>
+  <rect x="620" y="212" width="240" height="64" rx="10" class="accent"/>
+  <text x="640" y="250" class="title">x11 backend</text>
+  <rect x="885" y="212" width="240" height="64" rx="10" class="accent"/>
+  <text x="905" y="250" class="title">gnome-bridge backend</text>
+  <text x="1125" y="284" text-anchor="end" class="label">CLIPVAULT-CAPTURE</text>
+
+  <!-- backends -> pipeline -->
+  <path d="M210 276 V312 H600 V338" class="line"/>
+  <path d="M475 276 V312" stroke="#8a8f98" stroke-width="1.5" fill="none"/>
+  <path d="M740 276 V312" stroke="#8a8f98" stroke-width="1.5" fill="none"/>
+  <path d="M1005 276 V312 H600" stroke="#8a8f98" stroke-width="1.5" fill="none"/>
+  <text x="612" y="330" class="edge">RawClip { formats, source_app, sensitive }</text>
+
+  <!-- Row 3: pipeline -->
+  <rect x="90" y="340" width="1035" height="70" rx="12" class="accent"/>
+  <text x="110" y="370" class="title">Capture pipeline</text>
+  <text x="110" y="394" class="sub">filter (private mode · excluded apps · sensitive hints · size)  →  normalise (DIB→PNG, CF_HTML)  →  BLAKE3 hash  →  dedupe</text>
+
+  <line x1="390" y1="410" x2="390" y2="458" class="line"/>
+  <text x="398" y="440" class="edge">upsert(clip)</text>
+
+  <!-- Row 4: core + storage -->
+  <rect x="90" y="460" width="600" height="90" rx="12" class="box"/>
+  <text x="110" y="494" class="title">clipvault-core</text>
+  <text x="110" y="518" class="sub">clip store · FTS5 + regex search · pins, groups, tags · retention</text>
+  <text x="110" y="538" class="sub">no OS code — fully unit-testable</text>
+
+  <g transform="translate(760 458)">
+    <path d="M0 14 V80 A85 14 0 0 0 170 80 V14" fill="#141516" stroke="#34343a"/>
+    <ellipse cx="85" cy="14" rx="85" ry="14" fill="#18191a" stroke="#34343a"/>
+    <text x="85" y="56" text-anchor="middle" class="title">SQLite + FTS5</text>
+    <text x="85" y="76" text-anchor="middle" class="sub">clipvault.db (WAL)</text>
+  </g>
+  <g transform="translate(955 458)">
+    <path d="M0 14 V80 A85 14 0 0 0 170 80 V14" fill="#141516" stroke="#34343a"/>
+    <ellipse cx="85" cy="14" rx="85" ry="14" fill="#18191a" stroke="#34343a"/>
+    <text x="85" y="56" text-anchor="middle" class="title">Blob store</text>
+    <text x="85" y="76" text-anchor="middle" class="sub">images · thumbnails</text>
+  </g>
+  <line x1="692" y1="505" x2="756" y2="505" class="line" marker-start="url(#arrow)"/>
+  <path d="M690 536 H722 V572 H1040 V556" class="line"/>
+
+  <!-- core -> app -->
+  <line x1="640" y1="552" x2="640" y2="630" class="line" marker-start="url(#arrow)"/>
+  <text x="648" y="600" class="edge">Tauri commands + events</text>
+
+  <!-- Row 5: desktop app -->
+  <rect x="80" y="612" width="1055" height="122" rx="14" class="band"/>
+  <rect x="100" y="632" width="170" height="64" rx="10" class="box"/>
+  <text x="120" y="660" class="title">Tray / indicator</text>
+  <text x="120" y="680" class="sub">menu · private mode</text>
+  <rect x="290" y="632" width="190" height="64" rx="10" class="box"/>
+  <text x="310" y="660" class="title">Global hotkey</text>
+  <text x="310" y="680" class="sub">Ctrl+` · portals · CLI</text>
+  <rect x="500" y="632" width="280" height="64" rx="10" class="accent"/>
+  <text x="520" y="660" class="title">Popup UI</text>
+  <text x="520" y="680" class="sub">React + TypeScript webview</text>
+  <rect x="820" y="632" width="295" height="64" rx="10" class="accent"/>
+  <text x="840" y="660" class="title">clipvault-paste</text>
+  <text x="840" y="680" class="sub">write formats · inject Ctrl+V</text>
+  <text x="100" y="722" class="label">TAURI 2 DESKTOP APP  ·  single process, lives in the tray</text>
+
+  <line x1="270" y1="664" x2="288" y2="664" class="line"/>
+  <line x1="480" y1="664" x2="498" y2="664" class="line"/>
+  <line x1="780" y1="664" x2="818" y2="664" class="line"/>
+
+  <!-- paste-back lane -->
+  <path d="M1115 664 H1165 V36 H210 V66" stroke="#828fff" stroke-width="1.5" stroke-dasharray="6 5" fill="none" marker-end="url(#arrowA)"/>
+  <path d="M475 36 V66" stroke="#828fff" stroke-width="1.5" stroke-dasharray="6 5" fill="none" marker-end="url(#arrowA)"/>
+  <path d="M740 36 V66" stroke="#828fff" stroke-width="1.5" stroke-dasharray="6 5" fill="none" marker-end="url(#arrowA)"/>
+  <path d="M1005 36 V66" stroke="#828fff" stroke-width="1.5" stroke-dasharray="6 5" fill="none" marker-end="url(#arrowA)"/>
+  <text x="1182" y="360" class="edge" style="fill:#828fff" transform="rotate(90 1182 360)" text-anchor="middle">paste-back to the previous window</text>
+</svg>

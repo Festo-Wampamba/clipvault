@@ -1,0 +1,34 @@
+name: Feature request
+description: Suggest an idea or a feature from Ditto, Clipboard Indicator, or elsewhere
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should it work? Mock-ups and keyboard shortcuts welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: reference
+    attributes:
+      label: Prior art
+      description: Does another clipboard manager (Ditto, Clipboard Indicator, CopyQ, …) do this? How?
+  - type: dropdown
+    id: platforms
+    attributes:
+      label: Which platforms does this matter for?
+      multiple: true
+      options:
+        - All
+        - Windows
+        - GNOME
+        - KDE Plasma
+        - Sway / Hyprland / wlroots
+        - X11

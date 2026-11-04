@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Code jobs switch on by themselves once the Rust workspace and UI land,
+  # so this workflow does not need editing at each milestone.
+  detect:
+    runs-on: ubuntu-24.04
+    outputs:
+      rust: ${{ steps.files.outputs.rust }}
+      node: ${{ steps.files.outputs.node }}
+      deny: ${{ steps.files.outputs.deny }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: files
+        run: |
+          echo "rust=$([ -f Cargo.toml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "node=$([ -f package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "deny=$([ -f deny.toml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  docs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DavidAnson/markdownlint-cli2-action@v19
+        with:
+          globs: "**/*.md"
+
+  rust:
+    needs: detect
+    if: needs.detect.outputs.rust == 'true'
+    name: rust (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libxdo-dev libssl-dev libxcb-xfixes0-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+  ui:
+    needs: detect
+    if: needs.detect.outputs.node == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r --if-present run lint
+      - run: pnpm -r --if-present run test
+      - run: pnpm -r --if-present run build
+
+  supply-chain:
+    needs: detect
+    if: needs.detect.outputs.deny == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2

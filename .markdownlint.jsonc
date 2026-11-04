@@ -1,0 +1,8 @@
+{
+  // Long lines are fine in tables and prose.
+  "MD013": false,
+  // README uses inline HTML for the banner, badges, and <kbd> keys.
+  "MD033": false,
+  // README starts with the banner image, not a heading.
+  "MD041": false
+}
