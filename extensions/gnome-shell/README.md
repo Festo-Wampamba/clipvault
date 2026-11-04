@@ -81,10 +81,16 @@ spike and shows a notification:
 gnome-extensions enable clipvault@festo-wampamba.github.io
 ```
 
-Watch its output in the journal:
+Watch its output. GNOME Shell's children log to the system journal, not the `--user` one:
 
 ```bash
-journalctl --user -f -o cat | grep -E 'ClipVault|bytes|pasted'
+journalctl -b -f -o cat _COMM=spike
+```
+
+Extension messages (refused connections, start-up errors) are under GNOME Shell's own entries:
+
+```bash
+journalctl -b -f -o cat /usr/bin/gnome-shell | grep 'ClipVault Bridge'
 ```
 
 Then test:
