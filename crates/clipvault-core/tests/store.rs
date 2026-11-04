@@ -53,6 +53,38 @@ fn search_ids(store: &Store, query: &str) -> Vec<ClipId> {
         .collect()
 }
 
+/// Whether `needle` appears anywhere in the database, its log, or its shared-memory file.
+fn database_files_contain(dir: &Path, needle: &[u8]) -> bool {
+    fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.is_file())
+        .any(|path| {
+            fs::read(path)
+                .unwrap()
+                .windows(needle.len())
+                .any(|window| window == needle)
+        })
+}
+
+/// Replaces one blob file with a folder, so removing it fails.
+fn make_a_blob_unremovable(dir: &Path) {
+    let shard = fs::read_dir(dir.join("blobs"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let blob = fs::read_dir(&shard)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    fs::remove_file(&blob).unwrap();
+    fs::create_dir(&blob).unwrap();
+}
+
 fn blob_file_count(dir: &Path) -> usize {
     fs::read_dir(dir.join("blobs"))
         .unwrap()
@@ -342,17 +374,33 @@ fn deleted_text_leaves_no_trace_in_the_database_files() {
 
     store.delete(id).unwrap();
 
-    let leaked = fs::read_dir(dir.path())
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| path.is_file())
-        .any(|path| {
-            fs::read(path)
-                .unwrap()
-                .windows(secret.len())
-                .any(|w| w == secret)
-        });
-    assert!(!leaked);
+    assert!(!database_files_contain(dir.path(), secret));
+}
+
+#[test]
+fn a_failed_blob_cleanup_still_wipes_deleted_text_from_the_log() {
+    let (dir, mut store) = open();
+    let secret = b"correcthorsebatterystaple";
+    add(&mut store, &clip(TEXT_MIME, secret), 1);
+    add(&mut store, &clip(PNG_MIME, &vec![8; BIG]), 2);
+    make_a_blob_unremovable(dir.path());
+
+    let _ = store.clear_unpinned();
+
+    assert!(!database_files_contain(dir.path(), secret));
+}
+
+#[test]
+fn reopening_the_history_removes_blob_files_a_crash_left_behind() {
+    let dir = TempDir::new().unwrap();
+    drop(Store::open(dir.path()).unwrap());
+    let orphan_dir = dir.path().join("blobs").join("ef");
+    fs::create_dir_all(&orphan_dir).unwrap();
+    fs::write(orphan_dir.join("ef".repeat(32)), b"image of a deleted clip").unwrap();
+
+    let _reopened = Store::open(dir.path()).unwrap();
+
+    assert_eq!(blob_file_count(dir.path()), 0);
 }
 
 #[test]
@@ -375,21 +423,7 @@ fn a_failed_blob_cleanup_does_not_bring_deleted_clips_back() {
     let (dir, mut store) = open();
     add(&mut store, &clip(PNG_MIME, &vec![5; BIG]), 1);
     add(&mut store, &clip(PNG_MIME, &vec![6; BIG]), 2);
-    // Turn one blob file into a folder so removing it fails.
-    let shard = fs::read_dir(dir.path().join("blobs"))
-        .unwrap()
-        .next()
-        .unwrap()
-        .unwrap()
-        .path();
-    let blob = fs::read_dir(&shard)
-        .unwrap()
-        .next()
-        .unwrap()
-        .unwrap()
-        .path();
-    fs::remove_file(&blob).unwrap();
-    fs::create_dir(&blob).unwrap();
+    make_a_blob_unremovable(dir.path());
 
     let _ = store.clear_unpinned();
 
