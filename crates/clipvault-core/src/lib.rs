@@ -2,7 +2,10 @@
 //! backends hand clips in, the UI and CLI read them out.
 
 mod migrate;
+mod pipeline;
 mod store;
+
+pub use pipeline::{MAX_CLIP_BYTES, Outcome, Skip, app_key, capture};
 
 pub use migrate::{LATEST_SCHEMA_VERSION, migrate_down_to};
 pub use store::{

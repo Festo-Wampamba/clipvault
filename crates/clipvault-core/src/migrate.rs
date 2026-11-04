@@ -21,6 +21,16 @@ const MIGRATIONS: &[Migration] = &[
         up: include_str!("../migrations/20261105120100_add_clip_indexes.up.sql"),
         down: include_str!("../migrations/20261105120100_add_clip_indexes.down.sql"),
     },
+    Migration {
+        version: 20261106090000,
+        up: include_str!("../migrations/20261106090000_create_excluded_app.up.sql"),
+        down: include_str!("../migrations/20261106090000_create_excluded_app.down.sql"),
+    },
+    Migration {
+        version: 20261106090100,
+        up: include_str!("../migrations/20261106090100_add_clip_thumbnail.up.sql"),
+        down: include_str!("../migrations/20261106090100_add_clip_thumbnail.down.sql"),
+    },
 ];
 
 /// Schema version this build of ClipVault writes.
@@ -93,7 +103,8 @@ mod tests {
 
     fn table_count(conn: &Connection) -> i64 {
         conn.query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE name IN ('clip', 'clip_format', 'clip_fts', 'setting')",
+            "SELECT COUNT(*) FROM sqlite_master
+             WHERE name IN ('clip', 'clip_format', 'clip_fts', 'setting', 'excluded_app')",
             [],
             |r| r.get(0),
         )
@@ -118,7 +129,7 @@ mod tests {
 
         migrate_up(&mut conn).unwrap();
 
-        assert_eq!(table_count(&conn), 4);
+        assert_eq!(table_count(&conn), 5);
     }
 
     #[test]
@@ -132,7 +143,7 @@ mod tests {
     }
 
     #[test]
-    fn migrating_down_one_step_removes_only_the_indexes() {
+    fn migrating_down_to_the_first_version_keeps_only_its_tables() {
         let mut conn = Connection::open_in_memory().unwrap();
         migrate_up(&mut conn).unwrap();
 
@@ -146,6 +157,23 @@ mod tests {
             )
             .unwrap();
         assert_eq!((indexes, table_count(&conn)), (0, 4));
+    }
+
+    #[test]
+    fn migrating_down_one_step_removes_the_thumbnail_column() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate_up(&mut conn).unwrap();
+
+        migrate_down_to(&mut conn, MIGRATIONS[MIGRATIONS.len() - 2].version).unwrap();
+
+        let thumbnail_columns: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('clip') WHERE name = 'thumbnail'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(thumbnail_columns, 0);
     }
 
     #[test]
