@@ -132,7 +132,12 @@ impl Store {
         // Not stored in the file, so it is set on every connection.
         conn.pragma_update(None, "secure_delete", true)?;
         crate::migrate::migrate_up(&mut conn)?;
-        Ok(Self { conn, blob_dir })
+        let mut store = Self { conn, blob_dir };
+        // Wipe image files a crash left between committing a delete and unlinking them.
+        // One unremovable file must not lock the user out of their history, so the error
+        // is not returned here; `prune` runs the same sweep and reports it.
+        let _ = store.remove_orphan_blobs();
+        Ok(store)
     }
 
     /// Stores `clip`; if the same content is already stored, moves it to the top instead.
@@ -347,9 +352,11 @@ impl Store {
                 &[&to_i64(max_bytes)],
             )?;
         }
-        self.remove_orphan_blobs()?;
-        // Always, so a flush an earlier delete could not finish is retried here.
-        self.flush_wal()?;
+        // Both always run: one unremovable file must not stop the log being wiped, and a
+        // flush an earlier delete could not finish is retried here.
+        let swept = self.remove_orphan_blobs();
+        let flushed = self.flush_wal();
+        swept.and(flushed)?;
         Ok(removed)
     }
 
@@ -391,19 +398,31 @@ impl Store {
             return Ok(0);
         }
         // Only now, with the deletion committed, unlink blobs nothing references any more.
-        // Holding the write lock again means no other process is mid-way through re-adding
-        // one. If this step is interrupted, the leftovers are orphans that `prune` removes.
+        // If that is interrupted, the leftovers are orphans swept at the next open or prune.
+        // Both steps always run, so a failed unlink never stops the log being wiped.
+        let cleaned = self.remove_unreferenced_blobs(&blob_hashes);
+        let flushed = self.flush_wal();
+        cleaned.and(flushed)?;
+        Ok(removed)
+    }
+
+    /// Unlinks each blob in `hashes` that no clip references. Holds the write lock, so no
+    /// other process is mid-way through re-adding one. Keeps going past a file that cannot
+    /// be removed and returns the first error.
+    fn remove_unreferenced_blobs(&mut self, hashes: &[String]) -> Result<()> {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        for hash in blob_hashes {
-            if !blob_is_referenced(&tx, &hash)? {
-                remove_if_exists(&blob_path(&self.blob_dir, &hash)?)?;
+        let mut first_error = None;
+        for hash in hashes {
+            let result = blob_path(&self.blob_dir, hash)
+                .and_then(|path| remove_unless_referenced(&tx, hash, &path));
+            if let Err(e) = result {
+                first_error.get_or_insert(e);
             }
         }
         tx.commit()?;
-        self.flush_wal()?;
-        Ok(removed)
+        first_error.map_or(Ok(()), Err)
     }
 
     /// Empties the write-ahead log so deleted content is gone from it too. `TRUNCATE` waits
@@ -426,6 +445,7 @@ impl Store {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let mut first_error = None;
         for shard in fs::read_dir(&self.blob_dir)? {
             let shard = shard?;
             if !shard.file_type()?.is_dir() {
@@ -435,14 +455,21 @@ impl Store {
                 let file = file?;
                 // Leftover temporary files carry a suffix, so they never match a reference.
                 let name = file.file_name().to_string_lossy().into_owned();
-                if !blob_is_referenced(&tx, &name)? {
-                    remove_if_exists(&file.path())?;
+                if let Err(e) = remove_unless_referenced(&tx, &name, &file.path()) {
+                    first_error.get_or_insert(e);
                 }
             }
         }
         tx.commit()?;
-        Ok(())
+        first_error.map_or(Ok(()), Err)
     }
+}
+
+fn remove_unless_referenced(conn: &Connection, hash: &str, path: &Path) -> Result<()> {
+    if blob_is_referenced(conn, hash)? {
+        return Ok(());
+    }
+    remove_if_exists(path)
 }
 
 fn blob_is_referenced(conn: &Connection, hash: &str) -> Result<bool> {
