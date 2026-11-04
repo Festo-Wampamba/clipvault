@@ -348,6 +348,8 @@ impl Store {
             )?;
         }
         self.remove_orphan_blobs()?;
+        // Always, so a flush an earlier delete could not finish is retried here.
+        self.flush_wal()?;
         Ok(removed)
     }
 
@@ -384,19 +386,37 @@ impl Store {
                 .collect::<rusqlite::Result<_>>()?
         };
         let removed = tx.execute(&format!("DELETE FROM clip WHERE {condition}"), args)?;
-        // Unlink while still holding the write lock: no other process can be mid-way through
-        // re-adding the same blob. If the commit then fails, only clips being deleted lose it.
+        tx.commit()?;
+        if removed == 0 {
+            return Ok(0);
+        }
+        // Only now, with the deletion committed, unlink blobs nothing references any more.
+        // Holding the write lock again means no other process is mid-way through re-adding
+        // one. If this step is interrupted, the leftovers are orphans that `prune` removes.
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
         for hash in blob_hashes {
             if !blob_is_referenced(&tx, &hash)? {
                 remove_if_exists(&blob_path(&self.blob_dir, &hash)?)?;
             }
         }
         tx.commit()?;
-        if removed > 0 {
-            self.conn
-                .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
-        }
+        self.flush_wal()?;
         Ok(removed)
+    }
+
+    /// Empties the write-ahead log so deleted content is gone from it too. `TRUNCATE` waits
+    /// (up to the busy timeout) for other connections; one still reading an older snapshot
+    /// makes it report busy, which becomes [`Error::DeletedButNotFlushed`].
+    fn flush_wal(&self) -> Result<()> {
+        let busy: i64 = self
+            .conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0))?;
+        if busy != 0 {
+            return Err(Error::DeletedButNotFlushed);
+        }
+        Ok(())
     }
 
     /// Removes blob files no clip references, left behind if ClipVault stopped between
