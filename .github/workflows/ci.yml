@@ -22,7 +22,7 @@ jobs:
       node: ${{ steps.files.outputs.node }}
       deny: ${{ steps.files.outputs.deny }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: files
         run: |
           echo "rust=$([ -f Cargo.toml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
@@ -32,7 +32,7 @@ jobs:
   docs:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: DavidAnson/markdownlint-cli2-action@v19
         with:
           globs: "**/*.md"
@@ -47,7 +47,7 @@ jobs:
         os: [ubuntu-24.04, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install Linux system libraries
         if: runner.os == 'Linux'
         run: |
@@ -67,7 +67,7 @@ jobs:
     if: needs.detect.outputs.node == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -83,5 +83,5 @@ jobs:
     if: needs.detect.outputs.deny == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2

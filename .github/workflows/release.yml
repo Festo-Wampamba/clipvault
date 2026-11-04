@@ -19,7 +19,7 @@ jobs:
     # secrets are only released after a human approves the release run.
     environment: release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install Linux system libraries
         if: runner.os == 'Linux'
         run: |
