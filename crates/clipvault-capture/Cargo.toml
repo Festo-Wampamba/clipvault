@@ -16,6 +16,3 @@ zbus = { version = "5.13.2", default-features = false, features = ["blocking-api
 clipboard-win = { version = "5.4.3", features = ["monitor", "std"] }
 image = { version = "0.25.9", default-features = false, features = ["png", "bmp"] }
 windows-sys = { version = "0.61.2", features = ["Win32_UI_Input_KeyboardAndMouse"] }
-
-[target."cfg(unix)".dev-dependencies]
-signal-hook = "0.4.6"

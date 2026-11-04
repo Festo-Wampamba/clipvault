@@ -25,11 +25,21 @@ pub struct RawClip {
     pub formats: Vec<(String, Vec<u8>)>,
 }
 
+/// Something a backend reports while watching.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Event {
+    /// The clipboard changed.
+    Clip(RawClip),
+    /// The user pressed the paste-back shortcut. Only a key press the desktop itself saw
+    /// produces this, never a message another program can send.
+    PasteRequested,
+}
+
 /// Implemented once per platform, so the rest of the app never knows which OS it is on.
 pub trait ClipboardBackend: Send {
-    /// Starts watching in the background; every clipboard change is sent on `tx`.
+    /// Starts watching in the background and sends every [`Event`] on `tx`.
     /// Copies flagged as sensitive by password managers are never sent.
-    fn watch(&mut self, tx: Sender<RawClip>) -> Result<()>;
+    fn watch(&mut self, tx: Sender<Event>) -> Result<()>;
     /// Puts `data` on the system clipboard as `mime` (`TEXT_MIME` or `PNG_MIME`).
     fn write(&mut self, mime: &str, data: &[u8]) -> Result<()>;
     /// Sends Ctrl+V to the focused window.

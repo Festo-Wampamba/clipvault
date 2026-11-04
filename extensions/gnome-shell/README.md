@@ -35,6 +35,7 @@ extension refuses to start ClipVault.
 | Code injected into ClipVault | GNOME Shell sets the environment, so no `LD_PRELOAD` or `LD_AUDIT` reaches it. The extension starts ClipVault only when Yama is on (scope 1 or higher), so only its parent, GNOME Shell, could attach a debugger, and it makes itself non-dumpable before connecting. |
 | A frozen GNOME Shell, from a client that connects and never authenticates | GLib authenticates asynchronously; tested with a silent client, the main loop kept running. |
 | Flatpak or Snap apps | They cannot reach the private folder, and they are never the child GNOME Shell started. |
+| An app tricks ClipVault into pasting your history into it | Paste-back happens only when GNOME Shell sees you press its shortcut (Super+Shift+V) on a real keyboard. Wayland apps cannot fake key presses, and nothing they put on the clipboard or send to ClipVault triggers a paste. |
 | Password-manager copies | Copies marked `x-kde-passwordManagerHint` (KeePassXC and others) are never read or forwarded. |
 | Huge clips | Each format is capped at 20 MB; larger ones are skipped. |
 | Idle exposure | Nothing is read from the clipboard unless ClipVault is connected. The extension, and the ClipVault it started, stop on the lock screen. |
@@ -88,14 +89,12 @@ journalctl --user -f -o cat | grep -E 'ClipVault|bytes|pasted'
 
 Then test:
 
-1. Copy some text and take a screenshot to the clipboard. Each copy shows up in the journal.
-2. In a terminal, run `pkill -USR1 -x spike`, then switch to Text Editor within 3 seconds.
-   The spike pastes your last text there.
-3. Run `pkill -USR2 -x spike` and switch to an app that accepts images, such as LibreOffice.
-   The spike pastes your last screenshot.
+1. Copy some text, then take a screenshot to the clipboard. Each copy shows up in the journal.
+2. Open an app that accepts images, such as LibreOffice Writer, and press **Super+Shift+V**.
+   The spike pastes the clip before the current one.
+3. Press **Super+Shift+V** again: the two clips swap, so you get the other one.
 
-Paste is triggered only by you, never by what is on the clipboard. Otherwise a web page could
-copy a trigger word and receive your previous copy.
+You can change the shortcut with the `paste-previous-shortcut` setting.
 
 After rebuilding or changing settings, restart the spike:
 
@@ -118,6 +117,7 @@ passed to ClipVault in `CLIPVAULT_BRIDGE_SOCKET`.
 | Member | Kind | Arguments |
 |---|---|---|
 | `ClipboardChanged` | signal | `a(say)`: list of (MIME type, bytes) |
+| `PasteRequested` | signal | none; you pressed the paste-back shortcut |
 | `SetClipboard` | method | `s` MIME (`text/plain;charset=utf-8` or `image/png`), `ay` bytes |
 | `Paste` | method | none; presses Ctrl+V in the focused window |
 

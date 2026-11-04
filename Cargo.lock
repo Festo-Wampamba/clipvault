@@ -211,7 +211,6 @@ dependencies = [
  "clipboard-win",
  "image",
  "rustix",
- "signal-hook",
  "windows-sys",
  "zbus",
 ]
@@ -670,16 +669,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.9",
-]
-
-[[package]]
-name = "signal-hook"
-version = "0.4.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49f7447afd772ca79ad17ae0a3972a6b0df0cb4b80990fd82707593e9e012a74"
-dependencies = [
- "libc",
- "signal-hook-registry",
 ]
 
 [[package]]

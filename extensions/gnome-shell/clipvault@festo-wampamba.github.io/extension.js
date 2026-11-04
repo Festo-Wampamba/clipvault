@@ -10,12 +10,14 @@ import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
+import Shell from 'gi://Shell';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 const SOCKET_ENV = 'CLIPVAULT_BRIDGE_SOCKET';
 const SOCKET_NAME = 'bridge.sock';
+const PASTE_SHORTCUT = 'paste-previous-shortcut';
 // Everything else in GNOME Shell's environment (LD_PRELOAD and friends) is withheld.
 const PASSED_ENV = ['HOME', 'LANG', 'PATH', 'XDG_RUNTIME_DIR', 'XDG_CURRENT_DESKTOP',
     'WAYLAND_DISPLAY', 'DBUS_SESSION_BUS_ADDRESS'];
@@ -35,6 +37,7 @@ const BRIDGE_XML = `
     <signal name="ClipboardChanged">
       <arg name="formats" type="a(say)"/>
     </signal>
+    <signal name="PasteRequested"/>
     <method name="SetClipboard">
       <arg name="mime" type="s" direction="in"/>
       <arg name="data" type="ay" direction="in"/>
@@ -58,6 +61,10 @@ export default class ClipVaultBridge extends Extension {
             if (type === Meta.SelectionType.SELECTION_CLIPBOARD)
                 this._forwardClipboard().catch(e => console.error(`ClipVault Bridge: ${e.message}`));
         });
+        // The only paste trigger: a real key press seen by GNOME Shell. Wayland apps cannot
+        // synthesise one, unlike signals or messages any process of this user could send.
+        Main.wm.addKeybinding(PASTE_SHORTCUT, this._settings, Meta.KeyBindingFlags.IGNORE_AUTOREPEAT,
+            Shell.ActionMode.NORMAL, () => this._client?.exported.emit_signal('PasteRequested', null));
         try {
             this._launchClient();
         } catch (e) {
@@ -68,6 +75,7 @@ export default class ClipVaultBridge extends Extension {
 
     disable() {
         this._cancellable.cancel();
+        Main.wm.removeKeybinding(PASTE_SHORTCUT);
         this._selection.disconnect(this._ownerChangedId);
         this._dropClient();
         this._closeSocket();
