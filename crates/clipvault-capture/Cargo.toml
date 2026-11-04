@@ -1,0 +1,21 @@
+[package]
+name = "clipvault-capture"
+version = "0.0.0"
+description = "Clipboard capture and paste-back backends for ClipVault"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { version = "1.1.6", features = ["net", "process", "std"] }
+zbus = { version = "5.13.2", default-features = false, features = ["blocking-api", "async-io", "p2p"] }
+
+[target."cfg(windows)".dependencies]
+clipboard-win = { version = "5.4.3", features = ["monitor", "std"] }
+image = { version = "0.25.9", default-features = false, features = ["png", "bmp"] }
+windows-sys = { version = "0.61.2", features = ["Win32_UI_Input_KeyboardAndMouse"] }
+
+[target."cfg(unix)".dev-dependencies]
+signal-hook = "0.4.6"

@@ -1,0 +1,8 @@
+{
+  "uuid": "clipvault@festo-wampamba.github.io",
+  "name": "ClipVault Bridge",
+  "description": "Lets the ClipVault clipboard manager capture and paste on GNOME Wayland. Only a verified ClipVault app can connect.",
+  "shell-version": ["46"],
+  "settings-schema": "org.gnome.shell.extensions.clipvault",
+  "url": "https://github.com/Festo-Wampamba/clipvault"
+}

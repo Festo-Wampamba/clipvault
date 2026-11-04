@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.clipvault" path="/org/gnome/shell/extensions/clipvault/">
+    <key name="client-path" type="s">
+      <default>'/usr/bin/clipvault'</default>
+      <summary>ClipVault program</summary>
+      <description>Absolute path of the ClipVault binary the extension starts and gives clipboard access to. Nothing else can connect.</description>
+    </key>
+    <key name="allow-user-owned-client" type="b">
+      <default>false</default>
+      <summary>Allow development builds</summary>
+      <description>Start the program even when your own account can modify it, as with a cargo build. Leave this off for normal use.</description>
+    </key>
+  </schema>
+</schemalist>
