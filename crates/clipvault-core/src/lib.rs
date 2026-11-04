@@ -25,6 +25,12 @@ pub enum Error {
         "the history was written by a newer ClipVault (schema {found}; this build knows {known})"
     )]
     NewerSchema { found: i64, known: i64 },
+    /// The clips are deleted, but another ClipVault process is still reading an older
+    /// snapshot, so their content stays in the write-ahead log until the next `prune`.
+    #[error(
+        "deleted, but another ClipVault process kept the old content in the database log; it will be wiped at the next cleanup"
+    )]
+    DeletedButNotFlushed,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

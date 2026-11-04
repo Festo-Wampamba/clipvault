@@ -356,6 +356,47 @@ fn deleted_text_leaves_no_trace_in_the_database_files() {
 }
 
 #[test]
+fn delete_reports_when_another_reader_keeps_old_content_in_the_log() {
+    let (dir, mut store) = open();
+    let id = add(&mut store, &text("hunter2"), 1);
+    let reader = rusqlite::Connection::open(dir.path().join("clipvault.db")).unwrap();
+    reader.execute_batch("BEGIN").unwrap();
+    let _: i64 = reader
+        .query_row("SELECT COUNT(*) FROM clip", [], |r| r.get(0))
+        .unwrap();
+
+    let result = store.delete(id);
+
+    assert!(matches!(result, Err(Error::DeletedButNotFlushed)));
+}
+
+#[test]
+fn a_failed_blob_cleanup_does_not_bring_deleted_clips_back() {
+    let (dir, mut store) = open();
+    add(&mut store, &clip(PNG_MIME, &vec![5; BIG]), 1);
+    add(&mut store, &clip(PNG_MIME, &vec![6; BIG]), 2);
+    // Turn one blob file into a folder so removing it fails.
+    let shard = fs::read_dir(dir.path().join("blobs"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let blob = fs::read_dir(&shard)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    fs::remove_file(&blob).unwrap();
+    fs::create_dir(&blob).unwrap();
+
+    let _ = store.clear_unpinned();
+
+    assert!(recent_ids(&store).is_empty());
+}
+
+#[test]
 fn a_deleted_clips_id_is_never_reused() {
     let (_dir, mut store) = open();
     let deleted = add(&mut store, &text("password"), 1);
