@@ -1,119 +1,78 @@
-//! Phase 0 spike: prints every copy and proves paste-back.
+//! Phase 0 spike: prints every copy and proves paste-back from history.
 //!
-//! Paste-back is triggered by you, never by clipboard contents, so no app can make the
-//! spike paste your previous copy into it. Linux: send SIGUSR1 (last text) or SIGUSR2
-//! (last image). Windows: type `t` or `i` and press Enter. Output goes to stdout: the
-//! terminal on Windows, the journal on GNOME (where the extension starts the spike).
+//! Paste-back puts the clip *before* the current one into the focused window, and only
+//! when you ask in a way no other program can fake. GNOME: press Super+Shift+V, a key
+//! press GNOME Shell itself sees. Windows: press Enter in the spike's terminal, then focus
+//! the target window within 3 seconds. Output goes to stdout: the terminal on Windows, the
+//! journal on GNOME (where the extension starts the spike).
 
-use std::sync::mpsc::{self, Sender};
-use std::thread;
-use std::time::Duration;
+use std::sync::mpsc;
 
-use clipvault_capture::{PNG_MIME, RawClip, Result, TEXT_MIME, detect};
+use clipvault_capture::{Event, PNG_MIME, RawClip, Result, TEXT_MIME, detect};
 
-/// Time to switch to the window you want to paste into.
-const FOCUS_DELAY: Duration = Duration::from_secs(3);
 const PREVIEW_CHARS: usize = 60;
-
-enum Event {
-    Clip(RawClip),
-    Paste(&'static str),
-}
 
 fn main() -> Result<()> {
     let mut backend = detect()?;
-    let (clip_tx, clips) = mpsc::channel();
-    backend.watch(clip_tx)?;
-
     let (tx, events) = mpsc::channel();
-    let clip_events = tx.clone();
-    thread::spawn(move || {
-        for clip in clips {
-            if clip_events.send(Event::Clip(clip)).is_err() {
-                break;
-            }
-        }
-    });
-    listen_for_paste_requests(tx)?;
+    #[cfg(windows)]
+    listen_for_enter(tx.clone());
+    #[cfg(not(windows))]
+    println!("Press Super+Shift+V to paste the previous clip into the focused window.");
+    backend.watch(tx)?;
     println!("ClipVault spike: watching the clipboard.");
 
-    let mut last_text: Option<Vec<u8>> = None;
-    let mut last_image: Option<Vec<u8>> = None;
+    let mut current: Option<RawClip> = None;
+    let mut previous: Option<RawClip> = None;
     for event in events {
         match event {
             Event::Clip(clip) => {
                 print_clip(&clip);
-                if let Some(text) = format_of(&clip, TEXT_MIME) {
-                    last_text = Some(text.to_vec());
-                }
-                if let Some(image) = format_of(&clip, PNG_MIME) {
-                    last_image = Some(image.to_vec());
-                }
+                previous = current.replace(clip);
             }
-            Event::Paste(mime) => {
-                let last = if mime == TEXT_MIME {
-                    &last_text
-                } else {
-                    &last_image
-                };
-                let Some(data) = last.clone() else {
-                    println!("nothing to paste yet: copy something as {mime} first");
+            Event::PasteRequested => {
+                let Some(clip) = &previous else {
+                    println!("nothing to paste yet: copy two things first");
                     continue;
                 };
-                println!(
-                    "pasting in {} s: focus the target window",
-                    FOCUS_DELAY.as_secs()
-                );
-                thread::sleep(FOCUS_DELAY);
+                // Image first: an image copy often carries a text label as well.
+                let Some((mime, data)) = [PNG_MIME, TEXT_MIME]
+                    .into_iter()
+                    .find_map(|mime| format_of(clip, mime).map(|data| (mime, data.to_vec())))
+                else {
+                    println!("the previous clip has no text or PNG to paste");
+                    continue;
+                };
                 backend.write(mime, &data)?;
                 backend.paste()?;
-                println!("pasted {} bytes as {mime}", data.len());
+                println!("pasted the previous clip: {} bytes as {mime}", data.len());
             }
         }
     }
     Err("the clipboard watcher stopped".into())
 }
 
-#[cfg(unix)]
-fn listen_for_paste_requests(tx: Sender<Event>) -> Result<()> {
-    use signal_hook::consts::{SIGUSR1, SIGUSR2};
-
-    let mut signals = signal_hook::iterator::Signals::new([SIGUSR1, SIGUSR2])?;
-    thread::spawn(move || {
-        for signal in signals.forever() {
-            let mime = if signal == SIGUSR1 {
-                TEXT_MIME
-            } else {
-                PNG_MIME
-            };
-            if tx.send(Event::Paste(mime)).is_err() {
-                break;
-            }
-        }
-    });
-    println!(
-        "Paste back with `pkill -USR1 -x spike` (last text) or `pkill -USR2 -x spike` (last image)."
-    );
-    Ok(())
-}
-
+/// Windows spike only: Enter in this terminal asks for a paste. Only you can type here.
 #[cfg(windows)]
-fn listen_for_paste_requests(tx: Sender<Event>) -> Result<()> {
+fn listen_for_enter(tx: mpsc::Sender<Event>) {
+    use std::thread;
+    use std::time::Duration;
+
+    const FOCUS_DELAY: Duration = Duration::from_secs(3);
+    println!(
+        "Press Enter here, then focus the target window within 3 seconds, to paste the previous clip."
+    );
     thread::spawn(move || {
         for line in std::io::stdin().lines() {
-            let mime = match line.as_deref().map(str::trim) {
-                Ok("t") => TEXT_MIME,
-                Ok("i") => PNG_MIME,
-                Ok(_) => continue,
-                Err(_) => break,
-            };
-            if tx.send(Event::Paste(mime)).is_err() {
+            if line.is_err() {
+                break;
+            }
+            thread::sleep(FOCUS_DELAY);
+            if tx.send(Event::PasteRequested).is_err() {
                 break;
             }
         }
     });
-    println!("Paste back by typing t (last text) or i (last image) and pressing Enter.");
-    Ok(())
 }
 
 fn format_of<'a>(clip: &'a RawClip, mime: &str) -> Option<&'a [u8]> {

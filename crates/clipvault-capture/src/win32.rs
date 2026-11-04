@@ -12,7 +12,7 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     VK_CONTROL, VK_V,
 };
 
-use crate::{ClipboardBackend, PNG_MIME, RawClip, Result, TEXT_MIME};
+use crate::{ClipboardBackend, Event, PNG_MIME, RawClip, Result, TEXT_MIME};
 
 const OPEN_ATTEMPTS: usize = 10;
 /// Formats password managers add so clipboard tools skip the copy.
@@ -24,7 +24,7 @@ const SENSITIVE_FORMATS: [&str; 2] = [
 pub struct Win32;
 
 impl ClipboardBackend for Win32 {
-    fn watch(&mut self, tx: Sender<RawClip>) -> Result<()> {
+    fn watch(&mut self, tx: Sender<Event>) -> Result<()> {
         let (ready_tx, ready_rx) = mpsc::channel();
         thread::spawn(move || {
             // The monitor's hidden window must live on the thread that pumps its messages.
@@ -47,7 +47,7 @@ impl ClipboardBackend for Win32 {
                 }
                 match read_clip() {
                     Ok(Some(clip)) => {
-                        if tx.send(clip).is_err() {
+                        if tx.send(Event::Clip(clip)).is_err() {
                             break;
                         }
                     }

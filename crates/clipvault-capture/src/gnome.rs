@@ -16,7 +16,7 @@ use rustix::process::{DumpableBehavior, Pid};
 use zbus::blocking::{Connection, MessageIterator};
 use zbus::message::Type as MessageType;
 
-use crate::{ClipboardBackend, RawClip, Result};
+use crate::{ClipboardBackend, Event, RawClip, Result};
 
 /// Set by the extension when it starts ClipVault: path of the one-time bridge socket.
 pub const SOCKET_ENV: &str = "CLIPVAULT_BRIDGE_SOCKET";
@@ -84,7 +84,7 @@ fn verify_peer(stream: &UnixStream, expected_pid: Pid, expected_exe: &Path) -> R
 }
 
 impl ClipboardBackend for GnomeBridge {
-    fn watch(&mut self, tx: Sender<RawClip>) -> Result<()> {
+    fn watch(&mut self, tx: Sender<Event>) -> Result<()> {
         let messages = MessageIterator::from(&self.conn);
         thread::spawn(move || {
             for message in messages {
@@ -96,20 +96,24 @@ impl ClipboardBackend for GnomeBridge {
                     }
                 };
                 let header = message.header();
-                let is_clip = header.message_type() == MessageType::Signal
-                    && header
-                        .member()
-                        .is_some_and(|m| m.as_str() == "ClipboardChanged");
-                if !is_clip {
+                if header.message_type() != MessageType::Signal {
                     continue;
                 }
-                match message.body().deserialize::<Vec<(String, Vec<u8>)>>() {
-                    Ok(formats) => {
-                        if tx.send(RawClip { formats }).is_err() {
-                            break;
+                let event = match header.member().map(|m| m.as_str()) {
+                    Some("ClipboardChanged") => {
+                        match message.body().deserialize::<Vec<(String, Vec<u8>)>>() {
+                            Ok(formats) => Event::Clip(RawClip { formats }),
+                            Err(e) => {
+                                eprintln!("clipvault: ignoring malformed ClipboardChanged: {e}");
+                                continue;
+                            }
                         }
                     }
-                    Err(e) => eprintln!("clipvault: ignoring malformed ClipboardChanged: {e}"),
+                    Some("PasteRequested") => Event::PasteRequested,
+                    _ => continue,
+                };
+                if tx.send(event).is_err() {
+                    break;
                 }
             }
             // Dropping `tx` here tells the receiver the bridge is gone.
