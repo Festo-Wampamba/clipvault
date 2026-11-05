@@ -1,0 +1,20 @@
+[package]
+name = "clipvault-cli"
+version = "0.0.0"
+description = "The clipvault command: records clipboard history and manages it from the terminal"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "clipvault"
+path = "src/main.rs"
+
+[dependencies]
+clipvault-capture = { path = "../clipvault-capture" }
+clipvault-core = { path = "../clipvault-core" }
+
+[dev-dependencies]
+tempfile = "3.27.0"

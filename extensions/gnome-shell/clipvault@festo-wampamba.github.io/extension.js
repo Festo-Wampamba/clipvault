@@ -19,8 +19,9 @@ const SOCKET_ENV = 'CLIPVAULT_BRIDGE_SOCKET';
 const SOCKET_NAME = 'bridge.sock';
 const PASTE_SHORTCUT = 'paste-previous-shortcut';
 // Everything else in GNOME Shell's environment (LD_PRELOAD and friends) is withheld.
-const PASSED_ENV = ['HOME', 'LANG', 'PATH', 'XDG_RUNTIME_DIR', 'XDG_CURRENT_DESKTOP',
-    'WAYLAND_DISPLAY', 'DBUS_SESSION_BUS_ADDRESS'];
+// XDG_DATA_HOME must match the user's shell, or `clipvault list` would read another history.
+const PASSED_ENV = ['HOME', 'LANG', 'PATH', 'XDG_RUNTIME_DIR', 'XDG_DATA_HOME',
+    'XDG_CURRENT_DESKTOP', 'WAYLAND_DISPLAY', 'DBUS_SESSION_BUS_ADDRESS'];
 const OBJECT_PATH = '/org/clipvault/Bridge';
 const MAX_FORMAT_BYTES = 20 * 1024 * 1024;
 const TEXT_MIME = 'text/plain;charset=utf-8';
@@ -110,7 +111,7 @@ export default class ClipVaultBridge extends Extension {
         const environment = PASSED_ENV.filter(key => GLib.getenv(key) !== null)
             .map(key => `${key}=${GLib.getenv(key)}`);
         launcher.set_environ([...environment, `${SOCKET_ENV}=${socketPath}`]);
-        const child = launcher.spawnv([exe]);
+        const child = launcher.spawnv([exe, 'run']);
         this._child = child;
         this._childPid = Number(child.get_identifier());
         child.wait_async(null, () => {

@@ -254,6 +254,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "clipvault-cli"
+version = "0.0.0"
+dependencies = [
+ "clipvault-capture",
+ "clipvault-core",
+ "tempfile",
+]
+
+[[package]]
 name = "clipvault-core"
 version = "0.0.0"
 dependencies = [
