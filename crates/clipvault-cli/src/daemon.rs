@@ -1,25 +1,27 @@
-//! `clipvault run`: records every copy and answers the paste-back shortcut.
+//! `clipvault run`: records every copy, answers the paste-back shortcut and expires old
+//! history on a schedule.
 
-use std::sync::mpsc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use clipvault_capture::{ClipboardBackend, Event};
 use clipvault_core::{
-    Added, Format, Limits, NewClip, Outcome, PNG_MIME, Store, TEXT_MIME, capture,
+    Added, ClipId, Format, Limits, NewClip, Outcome, PNG_MIME, Store, TEXT_MIME, capture,
 };
 
 use crate::Result;
 
-/// Pruning scans the history, so it runs after a new clip at most this often.
-const PRUNE_INTERVAL_MS: i64 = 60 * 1000;
+/// History is pruned at start-up, then at most this often: after copies, and on a timer
+/// while idle, so old clips expire even when nothing new is copied.
+const PRUNE_INTERVAL: Duration = Duration::from_secs(60);
 
 /// What the daemon remembers between events.
 #[derive(Default)]
 struct State {
     last_prune: Option<i64>,
-    /// The latest copy was not stored (private mode, an excluded app, too large, empty),
-    /// so what is on the clipboard now is not the newest clip in history.
-    current_skipped: bool,
+    /// The clip on the clipboard right now, or `None` when the latest copy was not stored
+    /// (private mode, an excluded app, too large, empty). It may since have been deleted.
+    current: Option<ClipId>,
 }
 
 pub fn run(store: &mut Store) -> Result<()> {
@@ -27,10 +29,25 @@ pub fn run(store: &mut Store) -> Result<()> {
     let (tx, events) = mpsc::channel();
     backend.watch(tx)?;
     eprintln!("clipvault: recording the clipboard");
-    let mut state = State::default();
-    for event in events {
-        // One failed copy or paste must not stop recording; report it and carry on.
-        if let Err(e) = handle(store, backend.as_mut(), event, now_ms(), &mut state) {
+    // Until a copy arrives, assume the clipboard holds the newest stored clip.
+    let mut state = State {
+        current: store.recent(1)?.first().map(|clip| clip.id),
+        ..State::default()
+    };
+    loop {
+        let event = match events.recv_timeout(PRUNE_INTERVAL) {
+            Ok(event) => Some(event),
+            Err(RecvTimeoutError::Timeout) => None,
+            Err(RecvTimeoutError::Disconnected) => break,
+        };
+        let now = now_ms();
+        // One failed copy, paste or prune must not stop recording; report it and carry on.
+        if let Some(event) = event
+            && let Err(e) = handle(store, backend.as_mut(), event, now, &mut state)
+        {
+            eprintln!("clipvault: {e}");
+        }
+        if let Err(e) = prune_if_due(store, now, &mut state) {
             eprintln!("clipvault: {e}");
         }
     }
@@ -54,32 +71,42 @@ fn handle(
                     .collect(),
                 source_app: None,
             };
-            let outcome = capture(store, clip, now)?;
-            state.current_skipped = matches!(outcome, Outcome::Skipped(_));
-            let is_new = matches!(outcome, Outcome::Stored(Added::Inserted(_)));
-            let prune_due = state
-                .last_prune
-                .is_none_or(|last| now - last >= PRUNE_INTERVAL_MS);
-            if is_new && prune_due {
-                state.last_prune = Some(now);
-                store.prune(&Limits::default(), now)?;
-            }
+            state.current = match capture(store, clip, now)? {
+                Outcome::Stored(Added::Inserted(id) | Added::Bumped(id)) => Some(id),
+                Outcome::Skipped(_) => None,
+            };
             Ok(())
         }
-        Event::PasteRequested => paste_previous(store, backend, state.current_skipped),
+        Event::PasteRequested => paste_previous(store, backend, state.current),
     }
 }
 
-/// Puts the clip before the current clipboard content back on the clipboard and pastes it,
-/// so the shortcut recalls your previous copy until the popup UI arrives. When the current
-/// content was skipped it is not in history, so the newest stored clip is the previous one.
+fn prune_if_due(store: &mut Store, now: i64, state: &mut State) -> Result<()> {
+    let interval_ms = i64::try_from(PRUNE_INTERVAL.as_millis()).unwrap_or(i64::MAX);
+    if state
+        .last_prune
+        .is_some_and(|last| now - last < interval_ms)
+    {
+        return Ok(());
+    }
+    state.last_prune = Some(now);
+    store.prune(&Limits::default(), now)?;
+    Ok(())
+}
+
+/// Puts the newest clip that is not on the clipboard right now back on it and pastes it,
+/// so the shortcut recalls your previous copy until the popup UI arrives. Works whether
+/// the current content was skipped, deleted from history, or is the newest clip.
 fn paste_previous(
     store: &mut Store,
     backend: &mut dyn ClipboardBackend,
-    current_skipped: bool,
+    current: Option<ClipId>,
 ) -> Result<()> {
-    let position = if current_skipped { 0 } else { 1 };
-    let Some(previous) = store.recent(position + 1)?.into_iter().nth(position) else {
+    let previous = store
+        .recent(2)?
+        .into_iter()
+        .find(|clip| Some(clip.id) != current);
+    let Some(previous) = previous else {
         return Ok(());
     };
     let formats = store.formats(previous.id)?;
@@ -110,6 +137,8 @@ mod tests {
 
     use super::*;
 
+    const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+
     /// Records what the daemon asks of the clipboard instead of touching a real one.
     #[derive(Default)]
     struct FakeBackend {
@@ -133,7 +162,8 @@ mod tests {
         }
     }
 
-    /// A daemon with a temporary history and a fake clipboard, fed events in order.
+    /// A daemon with a temporary history and a fake clipboard, fed events in order the way
+    /// `run` does: handle the event, then prune if due.
     struct Daemon {
         _dir: TempDir,
         store: Store,
@@ -165,12 +195,21 @@ mod tests {
                 &mut self.state,
             )
             .unwrap();
+            prune_if_due(&mut self.store, self.now, &mut self.state).unwrap();
         }
 
         fn copy(&mut self, mime: &str, data: &[u8]) {
             self.send(Event::Clip(RawClip {
                 formats: vec![(mime.to_owned(), data.to_vec())],
             }));
+        }
+
+        fn written_text(&self) -> Vec<&[u8]> {
+            self.backend
+                .written
+                .iter()
+                .map(|(_, data)| data.as_slice())
+                .collect()
         }
     }
 
@@ -191,10 +230,7 @@ mod tests {
 
         daemon.send(Event::PasteRequested);
 
-        assert_eq!(
-            daemon.backend.written,
-            vec![(TEXT_MIME.to_owned(), b"first".to_vec())]
-        );
+        assert_eq!(daemon.written_text(), vec![b"first".as_slice()]);
     }
 
     #[test]
@@ -228,10 +264,21 @@ mod tests {
 
         daemon.send(Event::PasteRequested);
 
-        assert_eq!(
-            daemon.backend.written,
-            vec![(TEXT_MIME.to_owned(), b"newest stored".to_vec())]
-        );
+        assert_eq!(daemon.written_text(), vec![b"newest stored".as_slice()]);
+    }
+
+    #[test]
+    fn after_the_current_clip_is_deleted_the_shortcut_puts_back_the_newest_left() {
+        let mut daemon = Daemon::new();
+        daemon.copy(TEXT_MIME, b"a");
+        daemon.copy(TEXT_MIME, b"b");
+        daemon.copy(TEXT_MIME, b"c");
+        let current = daemon.store.recent(1).unwrap()[0].id;
+        daemon.store.delete(current).unwrap();
+
+        daemon.send(Event::PasteRequested);
+
+        assert_eq!(daemon.written_text(), vec![b"b".as_slice()]);
     }
 
     #[test]
@@ -253,5 +300,26 @@ mod tests {
         daemon.copy(TEXT_MIME, b"secret");
 
         assert!(daemon.store.recent(1).unwrap().is_empty());
+    }
+
+    #[test]
+    fn old_clips_expire_even_when_nothing_new_is_copied() {
+        let mut daemon = Daemon::new();
+        daemon.copy(TEXT_MIME, b"from last month");
+
+        prune_if_due(&mut daemon.store, 31 * DAY_MS, &mut daemon.state).unwrap();
+
+        assert!(daemon.store.recent(1).unwrap().is_empty());
+    }
+
+    #[test]
+    fn pruning_waits_for_the_interval() {
+        let mut daemon = Daemon::new();
+        daemon.copy(TEXT_MIME, b"kept");
+        let last = daemon.state.last_prune.unwrap();
+
+        prune_if_due(&mut daemon.store, last + 1, &mut daemon.state).unwrap();
+
+        assert_eq!(daemon.state.last_prune, Some(last));
     }
 }
