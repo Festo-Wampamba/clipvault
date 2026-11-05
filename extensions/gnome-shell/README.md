@@ -52,57 +52,55 @@ For Phase 1:
 - Keep ClipVault running while the screen is locked.
 - Encrypt history at rest (planned for v0.2).
 
-## Try the Phase 0 spike
+## Try it
 
 From the repository root, build the spike and install the extension:
 
 ```bash
-cargo build --example spike
+cargo build -p clipvault-cli
 EXT=clipvault@festo-wampamba.github.io
 mkdir -p ~/.local/share/gnome-shell/extensions
 cp -r extensions/gnome-shell/$EXT ~/.local/share/gnome-shell/extensions/
 glib-compile-schemas ~/.local/share/gnome-shell/extensions/$EXT/schemas
 ```
 
-The spike is a development build in your home folder, so point the extension at it and allow
-development builds:
+This `clipvault` is a development build in your home folder, so point the extension at it and
+allow development builds:
 
 ```bash
 SCHEMAS=~/.local/share/gnome-shell/extensions/clipvault@festo-wampamba.github.io/schemas
 gsettings --schemadir $SCHEMAS set org.gnome.shell.extensions.clipvault \
-  client-path "$(realpath target/debug/examples/spike)"
+  client-path "$(realpath target/debug/clipvault)"
 gsettings --schemadir $SCHEMAS set org.gnome.shell.extensions.clipvault allow-user-owned-client true
 ```
 
-Log out and back in (Wayland cannot reload GNOME Shell), then enable it. GNOME Shell starts the
-spike and shows a notification:
+Log out and back in (Wayland cannot reload GNOME Shell), then enable it. GNOME Shell starts
+`clipvault run` and shows a notification:
 
 ```bash
 gnome-extensions enable clipvault@festo-wampamba.github.io
 ```
 
-Watch its output. GNOME Shell's children log to the system journal, not the `--user` one:
-
-```bash
-journalctl -b -f -o cat _COMM=spike
-```
-
-Extension messages (refused connections, start-up errors) are under GNOME Shell's own entries:
-
-```bash
-journalctl -b -f -o cat /usr/bin/gnome-shell | grep 'ClipVault Bridge'
-```
-
 Then test:
 
-1. Copy some text, then take a screenshot to the clipboard. Each copy shows up in the journal.
-2. Open an app that accepts images, such as LibreOffice Writer, and press **Super+Shift+V**.
-   The spike pastes the clip before the current one.
-3. Press **Super+Shift+V** again: the two clips swap, so you get the other one.
+1. Copy some text, then take a screenshot to the clipboard.
+2. In a terminal, `./target/debug/clipvault list` shows both, newest first.
+3. Open an app that accepts images, such as LibreOffice Writer, and press **Super+Shift+V**.
+   ClipVault pastes the clip before the current one. Press it again and the two swap.
+4. Try `clipvault search WORD`, `clipvault pin ID`, `clipvault delete ID`, `clipvault clear` and
+   `clipvault private on` / `off` (see `clipvault help`).
 
 You can change the shortcut with the `paste-previous-shortcut` setting.
 
-After rebuilding or changing settings, restart the spike:
+Errors from ClipVault go to the system journal (GNOME Shell's children are not in the `--user`
+one); extension messages, such as refused connections, are under GNOME Shell's own entries:
+
+```bash
+journalctl -b -f -o cat _COMM=clipvault
+journalctl -b -f -o cat /usr/bin/gnome-shell | grep 'ClipVault Bridge'
+```
+
+After rebuilding or changing settings, restart ClipVault:
 
 ```bash
 gnome-extensions disable clipvault@festo-wampamba.github.io

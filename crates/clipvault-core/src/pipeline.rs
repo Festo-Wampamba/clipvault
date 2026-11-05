@@ -177,11 +177,11 @@ fn normalise(offered: Vec<Format>) -> Normalised {
     let mut decoded = None;
     if let Some(png) = find(&[PNG_MIME]) {
         keep(PNG_MIME, png.to_vec());
-    } else if let Some(image) = find(IMAGE_SOURCES).and_then(decode) {
-        if let Some(png) = to_png(&image) {
-            keep(PNG_MIME, png);
-            decoded = Some(image);
-        }
+    } else if let Some(image) = find(IMAGE_SOURCES).and_then(decode)
+        && let Some(png) = to_png(&image)
+    {
+        keep(PNG_MIME, png);
+        decoded = Some(image);
     }
     kept.retain(|f| !f.data.iter().all(u8::is_ascii_whitespace));
     Normalised {

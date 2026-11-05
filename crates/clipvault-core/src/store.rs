@@ -53,7 +53,8 @@ pub enum Kind {
 }
 
 impl Kind {
-    fn as_str(self) -> &'static str {
+    /// Lower-case name, as stored and as shown by `clipvault list`.
+    pub fn as_str(self) -> &'static str {
         match self {
             Kind::Text => "text",
             Kind::Image => "image",
