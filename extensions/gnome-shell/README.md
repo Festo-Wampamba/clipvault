@@ -123,6 +123,6 @@ passed to ClipVault in `CLIPVAULT_BRIDGE_SOCKET`.
 | `ClipboardChanged` | signal | `a(say)`: list of (MIME type, bytes) |
 | `PasteRequested` | signal | none; you pressed the paste-back shortcut |
 | `SetClipboard` | method | `s` MIME (`text/plain;charset=utf-8` or `image/png`), `ay` bytes |
-| `Paste` | method | none; presses Ctrl+V in the focused window |
+| `Paste` | method | none; once Shift, Ctrl, Alt and Super are released, presses Ctrl+V in the focused window (skipped if they are still held after 1 s) |
 
 Phase 0 limits: `SetClipboard` places one format, and only PNG images are forwarded.

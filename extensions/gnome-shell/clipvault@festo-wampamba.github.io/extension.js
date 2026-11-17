@@ -31,6 +31,11 @@ const OTHER_FORWARDED = ['text/html', 'image/png', 'text/uri-list'];
 const WRITABLE = [TEXT_MIME, 'image/png'];
 // KDE convention, also set by KeePassXC and other password managers.
 const SENSITIVE_HINT = 'x-kde-passwordManagerHint';
+// Modifiers that must be up before the synthetic Ctrl+V; Super can report as either mask.
+const HELD_MODIFIERS = Clutter.ModifierType.SHIFT_MASK | Clutter.ModifierType.CONTROL_MASK |
+    Clutter.ModifierType.MOD1_MASK | Clutter.ModifierType.MOD4_MASK | Clutter.ModifierType.SUPER_MASK;
+const RELEASE_POLL_MS = 20;
+const RELEASE_TIMEOUT_MS = 1000;
 
 const BRIDGE_XML = `
 <node>
@@ -53,6 +58,7 @@ export default class ClipVaultBridge extends Extension {
         this._client = null;
         this._child = null;
         this._childPid = null;
+        this._pasteSourceId = 0;
         this._server = null;
         this._socketDir = null;
         this._generation = 0;
@@ -77,6 +83,7 @@ export default class ClipVaultBridge extends Extension {
     disable() {
         this._cancellable.cancel();
         Main.wm.removeKeybinding(PASTE_SHORTCUT);
+        this._cancelPaste();
         this._selection.disconnect(this._ownerChangedId);
         this._dropClient();
         this._closeSocket();
@@ -218,7 +225,38 @@ export default class ClipVaultBridge extends Extension {
         this._selection.set_owner(Meta.SelectionType.SELECTION_CLIPBOARD, source);
     }
 
+    // The paste shortcut's own keys are still down when ClipVault asks to paste. Sent then,
+    // Ctrl+V would reach the app as Ctrl+Shift+Super+V, which most apps ignore; so wait for
+    // them to be let go. If they never are, skip it: the clip is already on the clipboard.
     _paste() {
+        this._cancelPaste();
+        let waitedMs = 0;
+        const attempt = () => {
+            const [, , modifiers] = global.get_pointer();
+            if ((modifiers & HELD_MODIFIERS) === 0) {
+                this._pasteSourceId = 0;
+                this._sendCtrlV();
+                return GLib.SOURCE_REMOVE;
+            }
+            waitedMs += RELEASE_POLL_MS;
+            if (waitedMs >= RELEASE_TIMEOUT_MS) {
+                this._pasteSourceId = 0;
+                console.warn('ClipVault Bridge: shortcut keys still held, not pasting; the clip is on the clipboard');
+                return GLib.SOURCE_REMOVE;
+            }
+            return GLib.SOURCE_CONTINUE;
+        };
+        if (attempt() === GLib.SOURCE_CONTINUE)
+            this._pasteSourceId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, RELEASE_POLL_MS, attempt);
+    }
+
+    _cancelPaste() {
+        if (this._pasteSourceId)
+            GLib.source_remove(this._pasteSourceId);
+        this._pasteSourceId = 0;
+    }
+
+    _sendCtrlV() {
         this._keyboard ??= Clutter.get_default_backend().get_default_seat()
             .create_virtual_device(Clutter.InputDeviceType.KEYBOARD_DEVICE);
         const now = GLib.get_monotonic_time();
