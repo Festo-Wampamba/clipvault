@@ -69,7 +69,7 @@ fn handle(
                     .into_iter()
                     .map(|(mime, data)| Format { mime, data })
                     .collect(),
-                source_app: None,
+                source_app: raw.source_app,
             };
             state.current = match capture(store, clip, now)? {
                 Outcome::Stored(Added::Inserted(id) | Added::Bumped(id)) => Some(id),
@@ -201,6 +201,14 @@ mod tests {
         fn copy(&mut self, mime: &str, data: &[u8]) {
             self.send(Event::Clip(RawClip {
                 formats: vec![(mime.to_owned(), data.to_vec())],
+                source_app: None,
+            }));
+        }
+
+        fn copy_from(&mut self, app: &str, mime: &str, data: &[u8]) {
+            self.send(Event::Clip(RawClip {
+                formats: vec![(mime.to_owned(), data.to_vec())],
+                source_app: Some(app.to_owned()),
             }));
         }
 
@@ -298,6 +306,15 @@ mod tests {
         daemon.store.set_private_mode(true).unwrap();
 
         daemon.copy(TEXT_MIME, b"secret");
+
+        assert!(daemon.store.recent(1).unwrap().is_empty());
+    }
+
+    #[test]
+    fn copies_from_an_excluded_app_are_not_recorded() {
+        let mut daemon = Daemon::new();
+
+        daemon.copy_from("org.keepassxc.KeePassXC", TEXT_MIME, b"hunter2");
 
         assert!(daemon.store.recent(1).unwrap().is_empty());
     }

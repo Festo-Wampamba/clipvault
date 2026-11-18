@@ -100,15 +100,13 @@ impl ClipboardBackend for GnomeBridge {
                     continue;
                 }
                 let event = match header.member().map(|m| m.as_str()) {
-                    Some("ClipboardChanged") => {
-                        match message.body().deserialize::<Vec<(String, Vec<u8>)>>() {
-                            Ok(formats) => Event::Clip(RawClip { formats }),
-                            Err(e) => {
-                                eprintln!("clipvault: ignoring malformed ClipboardChanged: {e}");
-                                continue;
-                            }
+                    Some("ClipboardChanged") => match decode_clipboard_changed(&message) {
+                        Ok(clip) => Event::Clip(clip),
+                        Err(e) => {
+                            eprintln!("clipvault: ignoring malformed ClipboardChanged: {e}");
+                            continue;
                         }
-                    }
+                    },
                     Some("PasteRequested") => Event::PasteRequested,
                     _ => continue,
                 };
@@ -139,9 +137,35 @@ impl ClipboardBackend for GnomeBridge {
     }
 }
 
+type ClipFormats = Vec<(String, Vec<u8>)>;
+
+fn decode_clipboard_changed(message: &zbus::Message) -> zbus::Result<RawClip> {
+    let body = message.body();
+    if let Ok((formats, source_app)) = body.deserialize::<(ClipFormats, String)>() {
+        return Ok(RawClip {
+            formats,
+            source_app: (!source_app.is_empty()).then_some(source_app),
+        });
+    }
+    let formats = body.deserialize::<ClipFormats>()?;
+    Ok(RawClip {
+        formats,
+        source_app: None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::TEXT_MIME;
+
+    fn decode_signal(formats: ClipFormats, source_app: &str) -> RawClip {
+        let msg = zbus::Message::signal(OBJECT_PATH, INTERFACE, "ClipboardChanged")
+            .unwrap()
+            .build(&(formats, source_app))
+            .unwrap();
+        decode_clipboard_changed(&msg).unwrap()
+    }
 
     #[test]
     fn rejects_peer_that_is_not_the_expected_process() {
@@ -173,5 +197,35 @@ mod tests {
         );
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn clipboard_changed_includes_the_source_app_when_present() {
+        let formats = vec![(TEXT_MIME.to_owned(), b"copied".to_vec())];
+
+        let clip = decode_signal(formats.clone(), "org.keepassxc.KeePassXC");
+
+        assert_eq!(
+            clip,
+            RawClip {
+                formats,
+                source_app: Some("org.keepassxc.KeePassXC".to_owned()),
+            }
+        );
+    }
+
+    #[test]
+    fn clipboard_changed_maps_an_empty_source_app_to_none() {
+        let formats = vec![(TEXT_MIME.to_owned(), b"copied".to_vec())];
+
+        let clip = decode_signal(formats.clone(), "");
+
+        assert_eq!(
+            clip,
+            RawClip {
+                formats,
+                source_app: None,
+            }
+        );
     }
 }
