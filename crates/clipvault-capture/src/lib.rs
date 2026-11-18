@@ -24,7 +24,6 @@ pub const TEXT_MIME: &str = "text/plain;charset=utf-8";
 pub const PNG_MIME: &str = "image/png";
 
 /// Copies larger than this per format are skipped (README §7).
-#[cfg(target_os = "linux")]
 pub(crate) const MAX_FORMAT_BYTES: usize = 20 * 1024 * 1024;
 /// KDE convention, also set by KeePassXC and other password managers.
 #[cfg(target_os = "linux")]
@@ -57,10 +56,12 @@ pub(crate) const IMAGE_SOURCES: &[&str] = &[
 pub(crate) const TEXT_OFFERED: &[&str] =
     &[TEXT_MIME, "text/plain", "UTF8_STRING", "STRING", "TEXT"];
 
-/// One clipboard change: every format the source application offered.
+/// One clipboard change: every format the source application offered, plus the
+/// application name or path when the platform exposes it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawClip {
     pub formats: Vec<(String, Vec<u8>)>,
+    pub source_app: Option<String>,
 }
 
 /// Something a backend reports while watching.
@@ -195,6 +196,31 @@ fn detect_linux(
     }
 }
 
+/// Formats file paths (such as Windows `CF_HDROP` entries) as a `text/uri-list`.
+#[cfg(any(windows, test))]
+pub(crate) fn paths_to_uri_list(paths: &[impl AsRef<str>]) -> Vec<u8> {
+    let mut out = String::new();
+    for raw in paths {
+        let path = raw.as_ref().trim();
+        if path.is_empty() {
+            continue;
+        }
+        let normalised = path.replace('\\', "/");
+        if let Some(unc) = normalised.strip_prefix("//") {
+            out.push_str("file://");
+            out.push_str(unc);
+        } else if let Some(abs) = normalised.strip_prefix('/') {
+            out.push_str("file:///");
+            out.push_str(abs);
+        } else {
+            out.push_str("file:///");
+            out.push_str(&normalised);
+        }
+        out.push_str("\r\n");
+    }
+    out.into_bytes()
+}
+
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use std::ffi::OsString;
@@ -284,6 +310,16 @@ mod tests {
                 ("text/html", "text/html"),
                 (PNG_MIME, PNG_MIME),
             ])
+        );
+    }
+
+    #[test]
+    fn converts_windows_drive_and_unc_paths_to_a_uri_list() {
+        let paths = [r"C:\Users\u\report.pdf", r"\\nas\share\photo.png"];
+
+        assert_eq!(
+            paths_to_uri_list(&paths),
+            b"file:///C:/Users/u/report.pdf\r\nfile://nas/share/photo.png\r\n"
         );
     }
 }

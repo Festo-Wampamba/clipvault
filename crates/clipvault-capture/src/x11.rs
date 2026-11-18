@@ -69,6 +69,7 @@ enum OwnerCommand {
 pub struct X11 {
     display: Option<String>,
     conn: RustConnection,
+    owner_win: Window,
     owner_tx: Sender<OwnerCommand>,
     owner_wake: File,
     io_timeout: Duration,
@@ -103,6 +104,7 @@ impl X11 {
         Ok(Self {
             display: display.map(str::to_owned),
             conn,
+            owner_win,
             owner_tx,
             owner_wake: File::from(wake_tx),
             io_timeout,
@@ -113,6 +115,7 @@ impl X11 {
 impl ClipboardBackend for X11 {
     fn watch(&mut self, tx: Sender<Event>) -> Result<()> {
         let display = self.display.clone();
+        let owner_win = self.owner_win;
         let timeout = self.io_timeout;
         let (ready_tx, ready_rx) = mpsc::channel();
         thread::spawn(move || {
@@ -139,7 +142,7 @@ impl ClipboardBackend for X11 {
                     return;
                 }
             };
-            run_watch_loop(conn, win, atoms, tx, timeout);
+            run_watch_loop(conn, win, owner_win, atoms, tx, timeout);
         });
         ready_rx
             .recv()
@@ -298,57 +301,91 @@ fn create_hidden_window(
 
 enum ReadStep<T> {
     Done(T),
-    Superseded,
+    Superseded(Window),
 }
 
 fn run_watch_loop(
     conn: RustConnection,
     win: Window,
+    owner_win: Window,
     atoms: Atoms,
     tx: Sender<Event>,
     timeout: Duration,
 ) {
-    let mut pending_read = false;
+    let mut pending_owner: Option<Window> = None;
     loop {
-        if !pending_read {
-            let event = match conn.wait_for_event() {
-                Ok(ev) => ev,
-                Err(e) => {
-                    eprintln!("clipvault: X11 watcher disconnected: {e}");
-                    break;
+        let selection_owner = match pending_owner.take() {
+            Some(owner) => owner,
+            None => {
+                let event = match conn.wait_for_event() {
+                    Ok(ev) => ev,
+                    Err(e) => {
+                        eprintln!("clipvault: X11 watcher disconnected: {e}");
+                        break;
+                    }
+                };
+                let XEvent::XfixesSelectionNotify(notify) = event else {
+                    continue;
+                };
+                if notify.selection != atoms.clipboard || notify.owner == x11rb::NONE {
+                    continue;
                 }
-            };
-            let XEvent::XfixesSelectionNotify(notify) = event else {
-                continue;
-            };
-            if notify.selection != atoms.clipboard || notify.owner == x11rb::NONE {
-                continue;
+                notify.owner
             }
-        }
-        pending_read = false;
-        match read_selection(&conn, win, &atoms, timeout) {
+        };
+        let source_app = (selection_owner != owner_win)
+            .then(|| source_app_of(&conn, selection_owner))
+            .flatten();
+        match read_selection(&conn, win, &atoms, source_app, timeout) {
             Ok(ReadStep::Done(Some(clip))) => {
                 if tx.send(Event::Clip(clip)).is_err() {
                     break;
                 }
             }
             Ok(ReadStep::Done(None)) => {}
-            Ok(ReadStep::Superseded) => pending_read = true,
+            Ok(ReadStep::Superseded(next_owner)) => pending_owner = Some(next_owner),
             Err(e) => eprintln!("clipvault: could not read X11 clipboard: {e}"),
         }
     }
+}
+
+fn source_app_of(conn: &RustConnection, selection_owner: Window) -> Option<String> {
+    if let Some(class) = wm_class_of(conn, selection_owner) {
+        return Some(class);
+    }
+    let focus = conn.get_input_focus().ok()?.reply().ok()?.focus;
+    if focus == x11rb::NONE || focus == 1 {
+        return None;
+    }
+    wm_class_of(conn, focus)
+}
+
+fn wm_class_of(conn: &RustConnection, window: Window) -> Option<String> {
+    let reply = conn
+        .get_property(false, window, AtomEnum::WM_CLASS, AtomEnum::STRING, 0, 256)
+        .ok()?
+        .reply()
+        .ok()?;
+    let parts: Vec<&[u8]> = reply
+        .value
+        .split(|&b| b == 0)
+        .filter(|part| !part.is_empty())
+        .collect();
+    let chosen = parts.get(1).or_else(|| parts.first())?;
+    Some(String::from_utf8_lossy(chosen).into_owned())
 }
 
 fn read_selection(
     conn: &RustConnection,
     win: Window,
     atoms: &Atoms,
+    source_app: Option<String>,
     timeout: Duration,
 ) -> Result<ReadStep<Option<RawClip>>> {
     let target_atoms = match request_targets(conn, win, atoms, timeout)? {
         ReadStep::Done(Some(list)) => list,
         ReadStep::Done(None) => return Ok(ReadStep::Done(None)),
-        ReadStep::Superseded => return Ok(ReadStep::Superseded),
+        ReadStep::Superseded(owner) => return Ok(ReadStep::Superseded(owner)),
     };
     let offered: Vec<&str> = target_atoms
         .into_iter()
@@ -371,13 +408,14 @@ fn read_selection(
                 formats.push((target_mime.to_owned(), bytes));
             }
             Ok(ReadStep::Done(_)) => {}
-            Ok(ReadStep::Superseded) => return Ok(ReadStep::Superseded),
+            Ok(ReadStep::Superseded(owner)) => return Ok(ReadStep::Superseded(owner)),
             Err(e) => eprintln!("clipvault: could not read X11 target {source_mime}: {e}"),
         }
     }
-    Ok(ReadStep::Done(
-        (!formats.is_empty()).then_some(RawClip { formats }),
-    ))
+    Ok(ReadStep::Done((!formats.is_empty()).then_some(RawClip {
+        formats,
+        source_app,
+    })))
 }
 
 fn request_targets(
@@ -399,7 +437,7 @@ fn request_targets(
     let deadline = Instant::now() + timeout;
     loop {
         match wait_event_until(conn, atoms.clipboard, deadline)? {
-            ReadStep::Superseded => return Ok(ReadStep::Superseded),
+            ReadStep::Superseded(owner) => return Ok(ReadStep::Superseded(owner)),
             ReadStep::Done(XEvent::SelectionNotify(ev))
                 if ev.selection == atoms.clipboard && ev.target == atoms.targets =>
             {
@@ -444,7 +482,7 @@ fn request_format(
     let deadline = Instant::now() + timeout;
     loop {
         match wait_event_until(conn, atoms.clipboard, deadline)? {
-            ReadStep::Superseded => return Ok(ReadStep::Superseded),
+            ReadStep::Superseded(owner) => return Ok(ReadStep::Superseded(owner)),
             ReadStep::Done(XEvent::SelectionNotify(ev))
                 if ev.selection == atoms.clipboard && ev.target == target_atom =>
             {
@@ -485,7 +523,7 @@ fn read_incr(
     let mut accumulated = Vec::new();
     loop {
         match wait_event_until(conn, clipboard, deadline)? {
-            ReadStep::Superseded => return Ok(ReadStep::Superseded),
+            ReadStep::Superseded(owner) => return Ok(ReadStep::Superseded(owner)),
             ReadStep::Done(XEvent::PropertyNotify(ev))
                 if ev.window == win && ev.atom == property && ev.state == Property::NEW_VALUE =>
             {
@@ -526,7 +564,7 @@ fn wait_event_until(
                 && notify.selection == clipboard
                 && notify.owner != x11rb::NONE
             {
-                return Ok(ReadStep::Superseded);
+                return Ok(ReadStep::Superseded(notify.owner));
             }
             return Ok(ReadStep::Done(ev));
         }
@@ -947,13 +985,27 @@ mod tests {
     }
 
     /// Spawns a test X11 selection owner offering `formats` on `display`.
-    fn spawn_x11_owner(display: &str, formats: Vec<(&'static str, Vec<u8>)>) {
+    fn spawn_x11_owner(
+        display: &str,
+        wm_class: Option<&'static [u8]>,
+        formats: Vec<(&'static str, Vec<u8>)>,
+    ) {
         let display = display.to_owned();
         let (ready_tx, ready_rx) = mpsc::channel();
         thread::spawn(move || {
             let (conn, screen_num) = x11rb::connect(Some(&display)).unwrap();
             let atoms = Atoms::intern(&conn).unwrap();
             let win = create_hidden_window(&conn, screen_num, EventMask::NO_EVENT).unwrap();
+            if let Some(class) = wm_class {
+                conn.change_property8(
+                    PropMode::REPLACE,
+                    win,
+                    AtomEnum::WM_CLASS,
+                    AtomEnum::STRING,
+                    class,
+                )
+                .unwrap();
+            }
             conn.set_selection_owner(win, atoms.clipboard, x11rb::CURRENT_TIME)
                 .unwrap();
             conn.sync().unwrap();
@@ -1023,6 +1075,7 @@ mod tests {
 
         spawn_x11_owner(
             &xvfb.display,
+            None,
             vec![
                 ("UTF8_STRING", b"hello x11".to_vec()),
                 (PNG_MIME, b"\x89PNG".to_vec()),
@@ -1039,6 +1092,28 @@ mod tests {
     }
 
     #[test]
+    fn captures_the_source_apps_wm_class_on_x11() {
+        let xvfb = XvfbServer::start();
+        let mut backend = X11::connect_with_timeout(Some(&xvfb.display), IO_TIMEOUT).unwrap();
+        let (tx, rx) = mpsc::channel();
+        backend.watch(tx).unwrap();
+
+        spawn_x11_owner(
+            &xvfb.display,
+            Some(b"keepassxc\0KeePassXC\0"),
+            vec![("UTF8_STRING", b"secret".to_vec())],
+        );
+
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(3)).unwrap(),
+            Event::Clip(RawClip {
+                formats: vec![(TEXT_MIME.to_owned(), b"secret".to_vec())],
+                source_app: Some("KeePassXC".to_owned()),
+            })
+        );
+    }
+
+    #[test]
     fn skips_x11_copies_marked_with_the_password_manager_hint() {
         let xvfb = XvfbServer::start();
         let mut backend = X11::connect_with_timeout(Some(&xvfb.display), IO_TIMEOUT).unwrap();
@@ -1047,12 +1122,17 @@ mod tests {
 
         spawn_x11_owner(
             &xvfb.display,
+            None,
             vec![
                 ("UTF8_STRING", b"hunter2".to_vec()),
                 (SENSITIVE_HINT, b"secret".to_vec()),
             ],
         );
-        spawn_x11_owner(&xvfb.display, vec![("UTF8_STRING", b"visible".to_vec())]);
+        spawn_x11_owner(
+            &xvfb.display,
+            None,
+            vec![("UTF8_STRING", b"visible".to_vec())],
+        );
 
         assert_eq!(
             next_clip(&rx),
@@ -1069,7 +1149,11 @@ mod tests {
         backend.watch(tx).unwrap();
 
         let _hung = spawn_hung_owner(&xvfb.display);
-        spawn_x11_owner(&xvfb.display, vec![("UTF8_STRING", b"rescued".to_vec())]);
+        spawn_x11_owner(
+            &xvfb.display,
+            None,
+            vec![("UTF8_STRING", b"rescued".to_vec())],
+        );
 
         assert_eq!(
             next_clip(&rx),

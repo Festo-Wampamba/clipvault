@@ -1,20 +1,34 @@
 //! Windows backend: `AddClipboardFormatListener` (via clipboard-win's `Monitor`),
-//! clipboard read/write, and `SendInput` for paste.
+//! clipboard read/write (text, HTML, RTF, file lists, PNG/bitmap), source-application
+//! lookup (`GetClipboardOwner` / `QueryFullProcessImageNameW`), and `SendInput` for paste.
 
 use std::io::Cursor;
+use std::ptr;
 use std::sync::mpsc::{self, Sender};
 use std::thread;
 
 use clipboard_win::{Clipboard, Getter, Monitor, formats, raw};
 use image::ImageFormat;
+use windows_sys::Win32::Foundation::{CloseHandle, HWND};
+use windows_sys::Win32::System::Threading::{
+    OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, SendInput, VIRTUAL_KEY,
     VK_CONTROL, VK_V,
 };
+use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
-use crate::{ClipboardBackend, Event, PNG_MIME, RawClip, Result, TEXT_MIME};
+use crate::{
+    ClipboardBackend, Event, MAX_FORMAT_BYTES, PNG_MIME, RawClip, Result, TEXT_MIME,
+    paths_to_uri_list,
+};
 
 const OPEN_ATTEMPTS: usize = 10;
+const HTML_FORMAT: &str = "HTML Format";
+const RTF_FORMAT: &str = "Rich Text Format";
+const RTF_MIME: &str = "text/rtf";
+const URI_LIST_MIME: &str = "text/uri-list";
 /// Formats password managers add so clipboard tools skip the copy.
 const SENSITIVE_FORMATS: [&str; 2] = [
     "ExcludeClipboardContentFromMonitorProcessing",
@@ -61,6 +75,9 @@ impl ClipboardBackend for Win32 {
     }
 
     fn write(&mut self, mime: &str, data: &[u8]) -> Result<()> {
+        if data.len() > MAX_FORMAT_BYTES {
+            return Err(format!("clip larger than {MAX_FORMAT_BYTES} bytes").into());
+        }
         let _clipboard = Clipboard::new_attempts(OPEN_ATTEMPTS)?;
         match mime {
             TEXT_MIME => raw::set_string(std::str::from_utf8(data)?)?,
@@ -103,16 +120,34 @@ fn read_clip() -> Result<Option<RawClip>> {
     if is_sensitive() {
         return Ok(None);
     }
+    let source_app = source_app();
     let mut found = Vec::new();
-    if raw::is_format_avail(formats::CF_UNICODETEXT) {
+    if within_limit(formats::CF_UNICODETEXT) {
         let mut text = String::new();
         formats::Unicode.read_clipboard(&mut text)?;
         found.push((TEXT_MIME.to_owned(), text.into_bytes()));
     }
+    if let Some(html) = read_named_format(HTML_FORMAT)? {
+        found.push((HTML_FORMAT.to_owned(), html));
+    }
+    if let Some(rtf) = read_named_format(RTF_FORMAT)? {
+        found.push((RTF_MIME.to_owned(), rtf));
+    }
+    if within_limit(formats::CF_HDROP) {
+        let mut files: Vec<String> = Vec::new();
+        formats::FileList.read_clipboard(&mut files)?;
+        let uris = paths_to_uri_list(&files);
+        if !uris.is_empty() {
+            found.push((URI_LIST_MIME.to_owned(), uris));
+        }
+    }
     if let Some(png) = read_png()? {
         found.push((PNG_MIME.to_owned(), png));
     }
-    Ok((!found.is_empty()).then_some(RawClip { formats: found }))
+    Ok((!found.is_empty()).then_some(RawClip {
+        formats: found,
+        source_app,
+    }))
 }
 
 fn is_sensitive() -> bool {
@@ -131,22 +166,86 @@ fn is_sensitive() -> bool {
     has_marker || history_opt_out
 }
 
+fn within_limit(format: u32) -> bool {
+    raw::is_format_avail(format)
+        && raw::size(format).is_some_and(|bytes| bytes.get() <= MAX_FORMAT_BYTES)
+}
+
+fn read_named_format(name: &str) -> Result<Option<Vec<u8>>> {
+    let Some(id) = raw::register_format(name).map(|id| id.get()) else {
+        return Ok(None);
+    };
+    if !within_limit(id) {
+        return Ok(None);
+    }
+    let mut data = Vec::new();
+    formats::RawData(id).read_clipboard(&mut data)?;
+    // Registered text formats on Windows often carry a trailing NUL terminator.
+    if data.last() == Some(&0) {
+        data.pop();
+    }
+    Ok((!data.is_empty()).then_some(data))
+}
+
 fn read_png() -> Result<Option<Vec<u8>>> {
     // Browsers and Office offer a "PNG" format that keeps transparency; prefer it.
-    if let Some(id) = raw::register_format("PNG").filter(|id| raw::is_format_avail(id.get())) {
-        let mut png = Vec::new();
-        formats::RawData(id.get()).read_clipboard(&mut png)?;
+    if let Some(png) = read_named_format("PNG")? {
         return Ok(Some(png));
     }
     if !raw::is_format_avail(formats::CF_BITMAP) {
         return Ok(None);
     }
+    if raw::size(formats::CF_DIB).is_some_and(|bytes| bytes.get() > MAX_FORMAT_BYTES) {
+        return Ok(None);
+    }
     let mut bmp = Vec::new();
     formats::Bitmap.read_clipboard(&mut bmp)?;
+    if bmp.len() > MAX_FORMAT_BYTES {
+        return Ok(None);
+    }
     let mut png = Vec::new();
     image::load_from_memory_with_format(&bmp, ImageFormat::Bmp)?
         .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)?;
     Ok(Some(png))
+}
+
+/// Executable path of the application that owns the clipboard (or the foreground window
+/// when an app passed `NULL` to `OpenClipboard`). Returns `None` for ClipVault's own writes.
+fn source_app() -> Option<String> {
+    let owner: HWND = raw::get_owner()
+        .map(|p| p.as_ptr())
+        // SAFETY: `GetForegroundWindow` takes no parameters and returns a window handle or null.
+        .unwrap_or_else(|| unsafe { GetForegroundWindow() });
+    if owner.is_null() {
+        return None;
+    }
+    let mut pid: u32 = 0;
+    // SAFETY: `owner` is a window handle and `&mut pid` is a valid out-pointer.
+    unsafe {
+        GetWindowThreadProcessId(owner, &mut pid);
+    }
+    if pid == 0 || pid == std::process::id() {
+        return None;
+    }
+    process_image_name(pid)
+}
+
+fn process_image_name(pid: u32) -> Option<String> {
+    // SAFETY: `OpenProcess` with `PROCESS_QUERY_LIMITED_INFORMATION` opens a query-only handle.
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if handle.is_null() {
+        return None;
+    }
+    let mut buf = [0u16; 1024];
+    let mut len = buf.len() as u32;
+    // SAFETY: `handle` is open, `buf` holds `len` UTF-16 code units, and `CloseHandle` always runs.
+    let ok = unsafe {
+        let ok = QueryFullProcessImageNameW(handle, 0, buf.as_mut_ptr(), &mut len);
+        CloseHandle(handle);
+        ok != 0
+    };
+    let _ = ptr::null::<u8>();
+    ok.then(|| String::from_utf16_lossy(&buf[..len as usize]))
 }
 
 /// clipboard-win copies only a plain BITMAPINFOHEADER, so encode 24-bit RGB:

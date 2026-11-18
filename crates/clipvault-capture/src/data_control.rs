@@ -488,7 +488,10 @@ impl WaylandState {
                 }
             }
             if !formats.is_empty() && latest.load(Ordering::Acquire) == generation {
-                let _ = tx.send(Event::Clip(RawClip { formats }));
+                let _ = tx.send(Event::Clip(RawClip {
+                    formats,
+                    source_app: None,
+                }));
             }
         });
     }

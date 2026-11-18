@@ -36,9 +36,9 @@ extension refuses to start ClipVault.
 | A frozen GNOME Shell, from a client that connects and never authenticates | GLib authenticates asynchronously; tested with a silent client, the main loop kept running. |
 | Flatpak or Snap apps | They cannot reach the private folder, and they are never the child GNOME Shell started. |
 | An app tricks ClipVault into pasting your history into it | Paste-back happens only when GNOME Shell sees you press its shortcut (Super+Shift+V) on a real keyboard. Wayland apps cannot fake key presses, and nothing they put on the clipboard or send to ClipVault triggers a paste. |
-| Password-manager copies | Copies marked `x-kde-passwordManagerHint` (KeePassXC and others) are never read or forwarded. |
+| Password-manager copies | Copies marked `x-kde-passwordManagerHint` (KeePassXC and others) are never read or forwarded, and the focused app name is sent with each copy so ClipVault's excluded-app list can filter password managers that do not set the hint. |
 | Huge clips | Each format is capped at 20 MB; larger ones are skipped. |
-| Idle exposure | Nothing is read from the clipboard unless ClipVault is connected. The extension, and the ClipVault it started, stop on the lock screen. |
+| Idle exposure | Nothing is read from the clipboard unless ClipVault is connected and the session is unlocked. The extension stays loaded across the lock screen so ClipVault keeps running, while ignoring clipboard changes and paste shortcuts until you unlock. |
 
 **What no extension can stop.** A program already running unsandboxed under your own account
 can change your GNOME extensions, settings and autostart entries, or read your files. This holds
@@ -46,11 +46,8 @@ for every Linux desktop app, not only ClipVault. The bridge gives such a program
 cannot use the bridge without first changing your settings, and the binary it would need to
 replace is owned by root.
 
-For Phase 1:
-
-- Restart ClipVault automatically if it exits. Today you re-enable the extension.
-- Keep ClipVault running while the screen is locked.
-- Encrypt history at rest (planned for v0.2).
+If ClipVault exits unexpectedly, the extension restarts it with exponential backoff (1 s up to
+30 s, stopping after 5 consecutive immediate failures).
 
 ## Try it
 
@@ -120,9 +117,9 @@ passed to ClipVault in `CLIPVAULT_BRIDGE_SOCKET`.
 
 | Member | Kind | Arguments |
 |---|---|---|
-| `ClipboardChanged` | signal | `a(say)`: list of (MIME type, bytes) |
+| `ClipboardChanged` | signal | `a(say)`: list of (MIME type, bytes), `s`: source application (`""` if unknown) |
 | `PasteRequested` | signal | none; you pressed the paste-back shortcut |
 | `SetClipboard` | method | `s` MIME (`text/plain;charset=utf-8` or `image/png`), `ay` bytes |
 | `Paste` | method | none; once Shift, Ctrl, Alt and Super are released, presses Ctrl+V in the focused window (skipped if they are still held after 1 s) |
 
-Phase 0 limits: `SetClipboard` places one format, and only PNG images are forwarded.
+Forwarded formats: text (`text/plain;charset=utf-8`, `UTF8_STRING`, `text/plain`, `STRING`, `TEXT`), HTML (`text/html`), RTF (`text/rtf`, `application/rtf`), file lists (`text/uri-list`, `x-special/gnome-copied-files`), and images (`image/png`, `image/jpeg`, `image/bmp`, `image/gif`, `image/webp`, `image/tiff`). `SetClipboard` places one format (`text/plain;charset=utf-8` or `image/png`).

@@ -26,8 +26,23 @@ const OBJECT_PATH = '/org/clipvault/Bridge';
 const MAX_FORMAT_BYTES = 20 * 1024 * 1024;
 const TEXT_MIME = 'text/plain;charset=utf-8';
 // Tried in order; the first one offered is forwarded as TEXT_MIME.
-const TEXT_SOURCES = [TEXT_MIME, 'UTF8_STRING', 'text/plain'];
-const OTHER_FORWARDED = ['text/html', 'image/png', 'text/uri-list'];
+const TEXT_SOURCES = [TEXT_MIME, 'UTF8_STRING', 'text/plain', 'STRING', 'TEXT'];
+const OTHER_FORWARDED = [
+    'text/html',
+    'text/rtf',
+    'application/rtf',
+    'text/uri-list',
+    'x-special/gnome-copied-files',
+];
+// Tried in order; PNG is preferred and others are converted to PNG by ClipVault.
+const IMAGE_SOURCES = [
+    'image/png',
+    'image/jpeg',
+    'image/bmp',
+    'image/gif',
+    'image/webp',
+    'image/tiff',
+];
 const WRITABLE = [TEXT_MIME, 'image/png'];
 // KDE convention, also set by KeePassXC and other password managers.
 const SENSITIVE_HINT = 'x-kde-passwordManagerHint';
@@ -36,12 +51,17 @@ const HELD_MODIFIERS = Clutter.ModifierType.SHIFT_MASK | Clutter.ModifierType.CO
     Clutter.ModifierType.MOD1_MASK | Clutter.ModifierType.MOD4_MASK | Clutter.ModifierType.SUPER_MASK;
 const RELEASE_POLL_MS = 20;
 const RELEASE_TIMEOUT_MS = 1000;
+const RESTART_INITIAL_MS = 1000;
+const RESTART_MAX_MS = 30000;
+const MAX_RESTART_FAILURES = 5;
+const STABLE_UPTIME_US = 10 * 1000 * 1000;
 
 const BRIDGE_XML = `
 <node>
   <interface name="org.clipvault.Bridge1">
     <signal name="ClipboardChanged">
       <arg name="formats" type="a(say)"/>
+      <arg name="source_app" type="s"/>
     </signal>
     <signal name="PasteRequested"/>
     <method name="SetClipboard">
@@ -58,41 +78,51 @@ export default class ClipVaultBridge extends Extension {
         this._client = null;
         this._child = null;
         this._childPid = null;
+        this._connectedAtUs = 0;
+        this._restartFailures = 0;
+        this._restartSourceId = 0;
         this._pasteSourceId = 0;
+        this._ownedSource = null;
         this._server = null;
         this._socketDir = null;
         this._generation = 0;
         this._cancellable = new Gio.Cancellable();
         this._selection = global.display.get_selection();
-        this._ownerChangedId = this._selection.connect('owner-changed', (_selection, type) => {
+        this._ownerChangedId = this._selection.connect('owner-changed', (_selection, type, owner) => {
             if (type === Meta.SelectionType.SELECTION_CLIPBOARD)
-                this._forwardClipboard().catch(e => console.error(`ClipVault Bridge: ${e.message}`));
+                this._forwardClipboard(owner).catch(e => console.error(`ClipVault Bridge: ${e.message}`));
         });
         // The only paste trigger: a real key press seen by GNOME Shell. Wayland apps cannot
         // synthesise one, unlike signals or messages any process of this user could send.
         Main.wm.addKeybinding(PASTE_SHORTCUT, this._settings, Meta.KeyBindingFlags.IGNORE_AUTOREPEAT,
             Shell.ActionMode.NORMAL, () => this._client?.exported.emit_signal('PasteRequested', null));
-        try {
-            this._launchClient();
-        } catch (e) {
-            console.error(`ClipVault Bridge: cannot start ClipVault: ${e.message}`);
-            this._closeSocket();
-        }
+        this._startClient();
     }
 
     disable() {
         this._cancellable.cancel();
         Main.wm.removeKeybinding(PASTE_SHORTCUT);
+        this._cancelRestart();
         this._cancelPaste();
         this._selection.disconnect(this._ownerChangedId);
         this._dropClient();
         this._closeSocket();
         this._child?.force_exit();
         this._child = null;
+        this._ownedSource = null;
         this._selection = null;
         this._cancellable = null;
         this._keyboard = null;
         this._settings = null;
+    }
+
+    _startClient() {
+        try {
+            this._launchClient();
+        } catch (e) {
+            console.error(`ClipVault Bridge: cannot start ClipVault: ${e.message}`);
+            this._closeSocket();
+        }
     }
 
     _launchClient() {
@@ -121,16 +151,41 @@ export default class ClipVaultBridge extends Extension {
         const child = launcher.spawnv([exe, 'run']);
         this._child = child;
         this._childPid = Number(child.get_identifier());
-        child.wait_async(null, () => {
-            if (this._child !== child)
-                return;
-            console.warn('ClipVault Bridge: ClipVault exited; re-enable the extension to start it again');
-            this._child = null;
-            this._dropClient();
-            this._closeSocket();
-        });
-        if (development)
+        this._connectedAtUs = 0;
+        child.wait_async(null, () => this._onChildExited(child));
+        if (development && this._restartFailures === 0)
             Main.notify('ClipVault Bridge', `Started a development build with clipboard access: ${exe}`);
+    }
+
+    _onChildExited(child) {
+        if (this._child !== child)
+            return;
+        const ranStably = this._connectedAtUs > 0 &&
+            (GLib.get_monotonic_time() - this._connectedAtUs) >= STABLE_UPTIME_US;
+        this._child = null;
+        this._dropClient();
+        this._closeSocket();
+
+        if (ranStably)
+            this._restartFailures = 0;
+        this._restartFailures += 1;
+        if (this._restartFailures > MAX_RESTART_FAILURES) {
+            console.error(`ClipVault Bridge: ClipVault exited ${MAX_RESTART_FAILURES} times in a row; giving up until the extension is re-enabled`);
+            return;
+        }
+        const delayMs = Math.min(RESTART_INITIAL_MS * (2 ** (this._restartFailures - 1)), RESTART_MAX_MS);
+        console.warn(`ClipVault Bridge: ClipVault exited; restarting in ${delayMs} ms`);
+        this._restartSourceId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, delayMs, () => {
+            this._restartSourceId = 0;
+            this._startClient();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _cancelRestart() {
+        if (this._restartSourceId)
+            GLib.source_remove(this._restartSourceId);
+        this._restartSourceId = 0;
     }
 
     _accept(connection) {
@@ -147,6 +202,7 @@ export default class ClipVaultBridge extends Extension {
         exported.export(connection, OBJECT_PATH);
         const closedId = connection.connect('closed', () => this._dropClient());
         this._client = {connection, exported, closedId};
+        this._connectedAtUs = GLib.get_monotonic_time();
         // ClipVault is connected: remove the socket so nothing else can even try.
         this._closeSocket();
         return true;
@@ -173,11 +229,13 @@ export default class ClipVaultBridge extends Extension {
         }
     }
 
-    async _forwardClipboard() {
-        // Nothing is read from the clipboard unless the verified ClipVault is connected.
-        if (this._client === null)
+    async _forwardClipboard(owner) {
+        // Nothing is read from the clipboard unless the verified ClipVault is connected
+        // and the session is unlocked.
+        if (this._client === null || Main.sessionMode.currentMode !== 'user')
             return;
         const generation = ++this._generation;
+        const sourceApp = owner === this._ownedSource ? '' : focusedApp();
         const type = Meta.SelectionType.SELECTION_CLIPBOARD;
         const offered = this._selection.get_mimetypes(type);
         if (offered.includes(SENSITIVE_HINT))
@@ -189,11 +247,15 @@ export default class ClipVaultBridge extends Extension {
             await this._readInto(formats, type, textSource, TEXT_MIME);
         for (const mime of OTHER_FORWARDED.filter(m => offered.includes(m)))
             await this._readInto(formats, type, mime, mime);
+        const imageSource = IMAGE_SOURCES.find(m => offered.includes(m));
+        if (imageSource)
+            await this._readInto(formats, type, imageSource, imageSource);
 
         // A newer copy started while we were reading; that one wins.
         if (generation !== this._generation || this._client === null || formats.length === 0)
             return;
-        this._client.exported.emit_signal('ClipboardChanged', new GLib.Variant('(a(say))', [formats]));
+        this._client.exported.emit_signal('ClipboardChanged',
+            new GLib.Variant('(a(say)s)', [formats, sourceApp]));
     }
 
     async _readInto(formats, type, sourceMime, asMime) {
@@ -222,6 +284,7 @@ export default class ClipVaultBridge extends Extension {
         if (data.length > MAX_FORMAT_BYTES)
             throw new Error(`clip larger than ${MAX_FORMAT_BYTES} bytes`);
         const source = Meta.SelectionSourceMemory.new(mime, new GLib.Bytes(data));
+        this._ownedSource = source;
         this._selection.set_owner(Meta.SelectionType.SELECTION_CLIPBOARD, source);
     }
 
@@ -265,6 +328,18 @@ export default class ClipVaultBridge extends Extension {
         this._keyboard.notify_keyval(now, Clutter.KEY_v, Clutter.KeyState.RELEASED);
         this._keyboard.notify_keyval(now, Clutter.KEY_Control_L, Clutter.KeyState.RELEASED);
     }
+}
+
+// Application class or desktop ID of the focused window, for excluded-app matching.
+function focusedApp() {
+    const win = global.display.focus_window;
+    if (!win)
+        return '';
+    const wmClass = win.get_wm_class();
+    if (wmClass)
+        return wmClass;
+    const app = Shell.WindowTracker.get_default().get_window_app(win);
+    return app ? app.get_id().replace(/\.desktop$/i, '') : '';
 }
 
 // PID of the process that connected, from the kernel (SO_PEERCRED), or null if unknown.
